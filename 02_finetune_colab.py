@@ -1,26 +1,21 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-02_finetune_colab.py — Unsloth QLoRA Fine-Tuning Script for Google Colab.
+02_finetune_colab.py — Unsloth QLoRA Fine-Tuning for Google Colab (T4 GPU).
 
 ╔══════════════════════════════════════════════════════════════════╗
-║  This script is designed to run on Google Colab (Free T4 GPU).  ║
-║  It will NOT work on Apple Silicon / M-series Macs.             ║
-║                                                                 ║
-║  Usage on Colab:                                                ║
-║  1. Upload training_data.jsonl to Colab                         ║
-║  2. pip install unsloth                                         ║
-║  3. Run this script                                             ║
-║  4. Download the GGUF model                                     ║
-║  5. Import into Ollama on your M4 Mac                           ║
+║  Model : Qwen2.5-VL-3B-Instruct (3 billion params)             ║
+║  GPU   : Google Colab T4 (15 GB VRAM) — fits comfortably       ║
+║  Time  : ~5-10 minutes for 3 epochs                            ║
+║  Output: GGUF Q4_K_M (~2 GB) → import into Ollama on Mac M4    ║
 ╚══════════════════════════════════════════════════════════════════╝
 
-Steps after fine-tuning on Colab:
-    1. Download the .gguf file from Colab
-    2. On your Mac M4, create an Ollama Modelfile:
-       echo 'FROM ./model-q4_k_m.gguf' > Modelfile
-    3. Import: ollama create alpha-signal-vlm -f Modelfile
-    4. Update config.py: ollama_vlm_model = "alpha-signal-vlm"
+How to use on Google Colab:
+    1. Runtime → Change runtime type → T4 GPU
+    2. Upload training_data.jsonl
+    3. Run this script
+    4. Download the .gguf file
+    5. On Mac: ollama create alpha-signal-vlm -f Modelfile
 
 Author: Nicolas
 License: MIT
@@ -28,28 +23,18 @@ License: MIT
 
 from __future__ import annotations
 
+import gc
 import json
 import logging
+import os
+import shutil
 import sys
 from pathlib import Path
 from typing import Any
 
-# ============================================================================
-# 0. COLAB SETUP — Run these cells first in Colab
-# ============================================================================
-# Cell 1: Install Unsloth
-# !pip install unsloth
-# !pip install --no-deps trl peft accelerate bitsandbytes
-
-# Cell 2: Upload your dataset
-# from google.colab import files
-# uploaded = files.upload()  # Upload training_data.jsonl
-
-# ============================================================================
-
 import torch
 from datasets import Dataset
-from trl import SFTTrainer
+from trl import SFTTrainer, SFTConfig
 from unsloth import FastVisionModel
 
 # ---------------------------------------------------------------------------
@@ -64,22 +49,18 @@ logger = logging.getLogger(__name__)
 
 
 # ---------------------------------------------------------------------------
-# Configuration (inline for Colab — no external config.py needed)
+# Configuration
 # ---------------------------------------------------------------------------
 CONFIG = {
-    # Model
-    "base_model": "unsloth/Qwen2-VL-7B-Instruct",
+    # Model — Qwen2.5-VL 3B (small, fast, fits on T4 easily)
+    "base_model": "unsloth/Qwen2.5-VL-3B-Instruct",
+    "base_model_hf": "Qwen/Qwen2.5-VL-3B-Instruct",  # For GGUF export
     "max_seq_length": 2048,
     "load_in_4bit": True,
 
     # LoRA
     "lora_r": 16,
     "lora_alpha": 16,
-    "lora_dropout": 0.0,
-    "target_modules": [
-        "q_proj", "k_proj", "v_proj", "o_proj",
-        "gate_proj", "up_proj", "down_proj",
-    ],
 
     # Training
     "num_train_epochs": 3,
@@ -89,129 +70,94 @@ CONFIG = {
     "lr_scheduler_type": "cosine",
     "warmup_ratio": 0.1,
     "weight_decay": 0.01,
-    "bf16": True,
-    "gradient_checkpointing": True,
-    "logging_steps": 5,
+    "logging_steps": 1,
     "save_steps": 50,
-    "seed": 42,
+    "seed": 3407,
 
     # Paths
     "dataset_path": "training_data.jsonl",
-    "output_dir": "alpha-signal-vlm",
+    "lora_dir": "alpha-signal-lora",
+    "merged_dir": "merged",
+    "output_gguf": "alpha-signal-q4km.gguf",
 
     # Export
-    "save_gguf": True,
-    "gguf_quantization": "q4_k_m",
+    "gguf_quantization": "Q4_K_M",
 }
 
 
 # ---------------------------------------------------------------------------
-# Dataset Loading
+# 1. Dataset Loading
 # ---------------------------------------------------------------------------
-
-def load_jsonl_dataset(jsonl_path: str) -> Dataset:
-    """Load the Unsloth-compatible JSONL file into a HuggingFace Dataset.
-
-    Args:
-        jsonl_path: Path to the JSONL training file.
-
-    Returns:
-        A HuggingFace Dataset object.
-    """
-    logger.info(f"Loading dataset from {jsonl_path}...")
-    samples: list[dict[str, Any]] = []
-
-    with open(jsonl_path, "r", encoding="utf-8") as f:
-        for line_num, line in enumerate(f, start=1):
-            line = line.strip()
-            if not line:
-                continue
-            try:
+def load_dataset(path: str) -> Dataset:
+    """Load JSONL dataset."""
+    logger.info(f"Loading dataset from {path}...")
+    samples: list[dict] = []
+    with open(path, "r", encoding="utf-8") as f:
+        for line in f:
+            if line.strip():
                 samples.append(json.loads(line))
-            except json.JSONDecodeError as e:
-                logger.warning(f"Skipping line {line_num}: {e}")
-
     if not samples:
-        raise ValueError(f"No valid samples in {jsonl_path}")
-
-    logger.info(f"✓ Loaded {len(samples)} training samples")
+        raise ValueError(f"No samples in {path}")
+    logger.info(f"  ✓ {len(samples)} training samples")
     return Dataset.from_list(samples)
 
 
 # ---------------------------------------------------------------------------
-# Model Setup
+# 2. Model Setup
 # ---------------------------------------------------------------------------
-
 def setup_model():
-    """Load the base VLM and apply QLoRA adapters via Unsloth.
-
-    Returns:
-        Tuple of (model, tokenizer).
-    """
+    """Load Qwen2.5-VL 3B and apply QLoRA."""
     logger.info(f"Loading model: {CONFIG['base_model']}")
 
-    # 1. Load pre-trained VLM in 4-bit
     model, tokenizer = FastVisionModel.from_pretrained(
         model_name=CONFIG["base_model"],
         max_seq_length=CONFIG["max_seq_length"],
         load_in_4bit=CONFIG["load_in_4bit"],
-        dtype=None,  # Auto-detect
+        dtype=None,
     )
 
-    # 2. Apply QLoRA adapters
     logger.info("Applying QLoRA adapters...")
     model = FastVisionModel.get_peft_model(
         model,
         r=CONFIG["lora_r"],
         lora_alpha=CONFIG["lora_alpha"],
-        lora_dropout=CONFIG["lora_dropout"],
-        target_modules=CONFIG["target_modules"],
+        lora_dropout=0,
         bias="none",
         use_gradient_checkpointing="unsloth",
         random_state=CONFIG["seed"],
         use_rslora=False,
         loftq_config=None,
-        # Fine-tune vision encoder projection layers
+        target_modules="all-linear",
         finetune_vision_layers=True,
         finetune_language_layers=True,
         finetune_attention_modules=True,
         finetune_mlp_modules=True,
     )
 
-    # Print trainable params
     trainable = sum(p.numel() for p in model.parameters() if p.requires_grad)
     total = sum(p.numel() for p in model.parameters())
     logger.info(f"  Trainable: {trainable:,} / {total:,} ({100*trainable/total:.2f}%)")
+    logger.info(f"  VRAM used: {torch.cuda.memory_allocated()/1e9:.1f} GB")
 
     return model, tokenizer
 
 
 # ---------------------------------------------------------------------------
-# Training
+# 3. Training
 # ---------------------------------------------------------------------------
-
 def train(model, tokenizer, dataset: Dataset):
-    """Run supervised fine-tuning.
-
-    Args:
-        model: PEFT-wrapped VLM.
-        tokenizer: Tokenizer/processor.
-        dataset: Training dataset.
-    """
+    """Run SFT fine-tuning with SFTConfig (required by Unsloth for VLMs)."""
     from unsloth import UnslothVisionDataCollator, is_bf16_supported
-    from trl import SFTConfig
 
-    output_dir = CONFIG["output_dir"]
+    FastVisionModel.for_training(model)
 
-    # ⚠️ CRITICAL: Use SFTConfig (NOT TrainingArguments)
-    # dataset_text_field, dataset_kwargs, max_seq_length go INSIDE SFTConfig
     trainer = SFTTrainer(
         model=model,
         tokenizer=tokenizer,
         data_collator=UnslothVisionDataCollator(model, tokenizer),
         train_dataset=dataset,
         args=SFTConfig(
-            output_dir=output_dir,
+            output_dir=CONFIG["lora_dir"],
             num_train_epochs=CONFIG["num_train_epochs"],
             per_device_train_batch_size=CONFIG["per_device_train_batch_size"],
             gradient_accumulation_steps=CONFIG["gradient_accumulation_steps"],
@@ -221,16 +167,13 @@ def train(model, tokenizer, dataset: Dataset):
             weight_decay=CONFIG["weight_decay"],
             fp16=not is_bf16_supported(),
             bf16=is_bf16_supported(),
-            gradient_checkpointing=CONFIG["gradient_checkpointing"],
             logging_steps=CONFIG["logging_steps"],
             save_steps=CONFIG["save_steps"],
-            save_total_limit=3,
+            save_total_limit=2,
             seed=CONFIG["seed"],
-            dataloader_num_workers=2,
-            report_to="none",
             optim="adamw_8bit",
+            report_to="none",
             remove_unused_columns=False,
-            # === These 3 lines MUST be in SFTConfig, not SFTTrainer ===
             dataset_text_field="",
             dataset_kwargs={"skip_prepare_dataset": True},
             dataset_num_proc=4,
@@ -238,99 +181,184 @@ def train(model, tokenizer, dataset: Dataset):
         ),
     )
 
-    logger.info("=" * 60)
-    logger.info("  Starting fine-tuning on Google Colab T4...")
-    logger.info(f"  Epochs: {CONFIG['num_train_epochs']}")
-    logger.info(f"  Batch:  {CONFIG['per_device_train_batch_size']}")
-    logger.info(f"  LR:     {CONFIG['learning_rate']}")
-    logger.info("=" * 60)
-
+    logger.info("🚀 Starting fine-tuning...")
     result = trainer.train()
-    logger.info(f"Training complete. Metrics: {result.metrics}")
+    logger.info(f"✓ Loss: {result.metrics.get('train_loss', 'N/A'):.4f}")
+    logger.info(f"  Duration: {result.metrics.get('train_runtime', 0)/60:.1f} min")
 
-    # Save checkpoint
-    trainer.save_model(output_dir)
-    tokenizer.save_pretrained(output_dir)
+    return trainer
 
 
 # ---------------------------------------------------------------------------
-# Export
+# 4. Save LoRA adapters
 # ---------------------------------------------------------------------------
+def save_lora(model, tokenizer):
+    """Save LoRA adapters for later merging."""
+    FastVisionModel.for_inference(model)
+    model.save_pretrained(CONFIG["lora_dir"])
+    tokenizer.save_pretrained(CONFIG["lora_dir"])
+    logger.info(f"✓ LoRA saved → {CONFIG['lora_dir']}/")
 
-def export_model(model, tokenizer):
-    """Export the fine-tuned model to safetensors + GGUF.
 
-    The GGUF file is what you'll download and import into Ollama on your Mac.
+# ---------------------------------------------------------------------------
+# 5. Merge LoRA + Export GGUF (shard-by-shard, memory-efficient)
+# ---------------------------------------------------------------------------
+def merge_and_export():
+    """Merge LoRA into base model shard by shard, then convert to GGUF."""
+    from safetensors.torch import load_file, save_file
+    from huggingface_hub import hf_hub_download
+    import subprocess
 
-    Args:
-        model: Fine-tuned PEFT model.
-        tokenizer: Tokenizer.
-    """
-    output_dir = CONFIG["output_dir"]
+    lora_dir = CONFIG["lora_dir"]
+    merged_dir = CONFIG["merged_dir"]
+    base_id = CONFIG["base_model_hf"]
 
-    # Merged 16-bit (safetensors)
-    merged_dir = f"{output_dir}_merged_16bit"
-    logger.info(f"Saving merged 16-bit model → {merged_dir}")
-    model.save_pretrained_merged(merged_dir, tokenizer, save_method="merged_16bit")
+    # Load LoRA config
+    with open(f"{lora_dir}/adapter_config.json") as f:
+        acfg = json.load(f)
+    scaling = acfg["lora_alpha"] / acfg["r"]
+    lora_state = load_file(f"{lora_dir}/adapter_model.safetensors")
 
-    # GGUF for Ollama
-    if CONFIG["save_gguf"]:
-        gguf_dir = f"{output_dir}_gguf"
-        quant = CONFIG["gguf_quantization"]
-        logger.info(f"Exporting GGUF ({quant}) → {gguf_dir}")
-        model.save_pretrained_gguf(gguf_dir, tokenizer, quantization_method=quant)
-        logger.info(f"✓ GGUF ready at {gguf_dir}/")
-        logger.info("")
-        logger.info("=" * 60)
-        logger.info("  NEXT STEPS (on your Mac M4):")
-        logger.info("  1. Download the .gguf file from Colab")
-        logger.info("  2. Create Modelfile:")
-        logger.info("     echo 'FROM ./model-q4_k_m.gguf' > Modelfile")
-        logger.info("  3. Import into Ollama:")
-        logger.info("     ollama create alpha-signal-vlm -f Modelfile")
-        logger.info("  4. Update config.py:")
-        logger.info('     ollama_vlm_model = "alpha-signal-vlm"')
-        logger.info("=" * 60)
+    # Build mapping
+    lora_pairs = {}
+    for key in lora_state:
+        if ".lora_A." not in key:
+            continue
+        base_key = key
+        for prefix in ["base_model.model.", "base_model."]:
+            if base_key.startswith(prefix):
+                base_key = base_key[len(prefix):]
+                break
+        base_key = base_key.replace(".lora_A.weight", ".weight")
+        base_key = base_key.replace(".lora_A.default.weight", ".weight")
+        base_key = base_key.replace("model.language_model.", "model.")
+        b_key = key.replace("lora_A", "lora_B")
+        if b_key in lora_state:
+            lora_pairs[base_key] = (lora_state[key].float(), lora_state[b_key].float())
+    logger.info(f"LoRA pairs to merge: {len(lora_pairs)}")
+
+    # Get base model index
+    idx_path = hf_hub_download(base_id, "model.safetensors.index.json")
+    with open(idx_path) as f:
+        weight_map = json.load(f)["weight_map"]
+
+    # Merge shard by shard
+    os.makedirs(merged_dir, exist_ok=True)
+    merged = 0
+    for shard in sorted(set(weight_map.values())):
+        logger.info(f"  📦 {shard}...")
+        data = load_file(hf_hub_download(base_id, shard))
+        for t in list(data.keys()):
+            if t in lora_pairs:
+                A, B = lora_pairs[t]
+                data[t] = (data[t].float() + (B @ A) * scaling).half()
+                merged += 1
+        save_file(data, f"{merged_dir}/{shard}")
+        del data
+    logger.info(f"  🔗 Merged {merged}/{len(lora_pairs)} layers")
+
+    # Copy config files
+    for fname in ["config.json", "generation_config.json", "tokenizer_config.json",
+                  "vocab.json", "merges.txt", "tokenizer.json", "chat_template.json",
+                  "preprocessor_config.json", "model.safetensors.index.json"]:
+        try:
+            shutil.copy(hf_hub_download(base_id, fname), f"{merged_dir}/{fname}")
+        except Exception:
+            pass
+
+    # Clean quantization_config
+    cfg_path = f"{merged_dir}/config.json"
+    with open(cfg_path) as f:
+        cfg = json.load(f)
+    cfg.pop("quantization_config", None)
+    with open(cfg_path, "w") as f:
+        json.dump(cfg, f, indent=2)
+
+    logger.info("✓ Merged model ready")
+
+    # Convert to GGUF
+    logger.info("Converting to GGUF...")
+    subprocess.run(["pip", "install", "-q", "gguf", "sentencepiece", "protobuf"], check=True)
+
+    if not os.path.exists("llama.cpp"):
+        subprocess.run(["git", "clone", "--depth", "1",
+                        "https://github.com/ggml-org/llama.cpp.git"], check=True)
+
+    # HF → F16
+    subprocess.run([
+        "python", "llama.cpp/convert_hf_to_gguf.py", merged_dir,
+        "--outfile", "model-f16.gguf", "--outtype", "f16"
+    ], check=True)
+
+    # Clean merged to free disk
+    shutil.rmtree(merged_dir)
+
+    # Build quantizer
+    subprocess.run("cd llama.cpp && cmake -B build && cmake --build build "
+                   "--target llama-quantize -j$(nproc)",
+                   shell=True, check=True, capture_output=True)
+
+    # F16 → Q4_K_M
+    quant = CONFIG["gguf_quantization"]
+    output = CONFIG["output_gguf"]
+    subprocess.run([
+        "llama.cpp/build/bin/llama-quantize",
+        "model-f16.gguf", output, quant
+    ], check=True)
+
+    os.remove("model-f16.gguf")
+
+    size_mb = os.path.getsize(output) / 1024**2
+    logger.info(f"🎉 GGUF ready: {output} ({size_mb:.0f} MB)")
+    logger.info("")
+    logger.info("=" * 60)
+    logger.info("  NEXT STEPS (on your Mac M4):")
+    logger.info("  1. Download alpha-signal-q4km.gguf")
+    logger.info("  2. Create Modelfile:")
+    logger.info("     echo 'FROM ./alpha-signal-q4km.gguf' > Modelfile")
+    logger.info("  3. Import: ollama create alpha-signal-vlm -f Modelfile")
+    logger.info("=" * 60)
 
 
 # ---------------------------------------------------------------------------
 # Main
 # ---------------------------------------------------------------------------
-
 def main():
-    """Run the full fine-tuning pipeline on Colab."""
+    """Full pipeline: load → train → save → merge → export GGUF."""
     logger.info("=" * 60)
     logger.info("  Multimodal Alpha-Signal Extractor")
-    logger.info("  Fine-Tuning with Unsloth (Google Colab T4)")
+    logger.info("  Fine-Tuning Qwen2.5-VL 3B (Google Colab T4)")
     logger.info("=" * 60)
 
-    # Check CUDA
     if not torch.cuda.is_available():
-        logger.error(
-            "CUDA not available! This script must run on Google Colab "
-            "with a T4 GPU. Go to Runtime → Change runtime type → T4 GPU."
-        )
+        logger.error("CUDA not available! Use Google Colab with T4 GPU.")
         sys.exit(1)
 
-    gpu_name = torch.cuda.get_device_name(0)
-    gpu_mem = torch.cuda.get_device_properties(0).total_mem / 1e9
-    logger.info(f"GPU: {gpu_name} ({gpu_mem:.1f} GB)")
+    gpu = torch.cuda.get_device_name(0)
+    vram = torch.cuda.get_device_properties(0).total_mem / 1e9
+    logger.info(f"GPU: {gpu} ({vram:.1f} GB)")
 
-    # 1. Load dataset
-    dataset = load_jsonl_dataset(CONFIG["dataset_path"])
+    # 1. Dataset
+    dataset = load_dataset(CONFIG["dataset_path"])
 
-    # 2. Setup model + LoRA
+    # 2. Model
     model, tokenizer = setup_model()
 
     # 3. Train
-    FastVisionModel.for_training(model)
-    train(model, tokenizer, dataset)
+    trainer = train(model, tokenizer, dataset)
 
-    # 4. Export
-    FastVisionModel.for_inference(model)
-    export_model(model, tokenizer)
+    # 4. Save LoRA
+    save_lora(model, tokenizer)
 
-    logger.info("✓ Fine-tuning complete!")
+    # 5. Free VRAM
+    del model, trainer
+    gc.collect()
+    torch.cuda.empty_cache()
+
+    # 6. Merge + GGUF
+    merge_and_export()
+
+    logger.info("✓ Pipeline complete!")
 
 
 if __name__ == "__main__":

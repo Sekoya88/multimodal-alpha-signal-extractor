@@ -104,6 +104,7 @@ class PipelineConfig:
 
     # Ollama endpoint for VLM (vision + text)
     vlm_provider: str = "ollama"  # "ollama" or "vllm"
+    # Default: generic model. After fine-tuning, change to "alpha-signal-vlm"
     ollama_vlm_model: str = "llama3.2-vision:11b"
 
     # vLLM fallback (for CUDA machines only)
