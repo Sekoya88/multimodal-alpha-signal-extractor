@@ -69,6 +69,7 @@ pip install -r requirements.txt
 
 # (Optionnel) Pour inférence GGUF directe avec le modèle fine-tuné sur Apple Silicon
 CMAKE_ARGS="-DGGML_METAL=on" pip install llama-cpp-python --force-reinstall --no-cache-dir
+curl -L -o models/mmproj-Qwen2.5-VL-3B-Instruct-f16.gguf https://huggingface.co/ggml-org/Qwen2.5-VL-3B-Instruct-GGUF/resolve/main/mmproj-Qwen2.5-VL-3B-Instruct-f16.gguf
 ```
 
 ### 2. Générer le Dataset
@@ -84,7 +85,8 @@ python 01_generate_dataset.py
 2. `pip install unsloth` dans Colab (Runtime → T4 GPU)
 3. `python 02_finetune_colab.py`
 4. Télécharger le `.gguf` sur votre Mac
-5. Exécuter le pipeline via `llama_cpp` (Metal) en configurant `config.py`
+5. Télécharger le projecteur visuel : `curl -L -o models/mmproj-Qwen2.5-VL-3B-Instruct-f16.gguf https://huggingface.co/ggml-org/Qwen2.5-VL-3B-Instruct-GGUF/resolve/main/mmproj-Qwen2.5-VL-3B-Instruct-f16.gguf`
+6. Exécuter le pipeline via `llama_cpp` (Metal) en configurant `config.py`
 
 ### 4. Exécuter le Pipeline
 
