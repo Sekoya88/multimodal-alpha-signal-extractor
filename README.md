@@ -2,21 +2,27 @@
 
 > **Any-to-Any** system that analyzes financial charts (Images) + market news (Text) to generate structured JSON trading signals.
 
-```
+```text
 ┌─────────────────────────────────────────────────────────────┐
 │                   PIPELINE ARCHITECTURE                     │
 │                                                             │
-│  ┌──────────┐    ┌──────────────┐    ┌──────────────────┐  │
-│  │ Chart    │───▶│  Ollama VLM  │───▶│  VLM Trading     │  │
-│  │ (Image)  │    │  (Llama3.2V) │    │  Signal (JSON)   │  │
-│  └──────────┘    └──────────────┘    └────────┬─────────┘  │
-│                                               │ merge      │
-│  ┌──────────┐    ┌──────────────┐    ┌──────────────────┐  │
-│  │ News     │───▶│  Ollama LLM  │───▶│  Final Trading   │  │
-│  │ (Text)   │    │  (Llama3-8b) │    │  Decision (JSON) │  │
-│  └──────────┘    └──────────────┘    └──────────────────┘  │
-│                                                             │
-│  ◀──────────── LangChain Orchestrator ──────────────▶       │
+│  ┌──────────┐    ┌──────────────────────────────────┐      │
+│  │ Chart    │───▶│ VLM (Vision-Language Model)      │      │
+│  │ (Image)  │    │ ├── [Prod] llama3.2-vision (Ollama)      │      │
+│  └──────────┘    │ └── [Custom] Qwen2.5-VL (llama_cpp)      │      │
+│         │        └─────────────────┬────────────────┘      │
+│         │                          │ VLM Signal JSON       │
+│         │                          ▼                       │
+│  ┌──────────┐    ┌──────────────────────────────────┐      │
+│  │ News     │───▶│ LLM (Large Language Model)       │      │
+│  │ (Text)   │    │ └── llama3:8b (Ollama)           │──┐   │
+│  └──────────┘    └──────────────────────────────────┘  │   │
+│                                                        │   │
+│                        merge signals ◀─────────────────┘   │
+│                              │                             │
+│                      ┌───────▼────────┐                    │
+│                      │ FINAL DECISION │                    │
+│                      └────────────────┘                    │
 └─────────────────────────────────────────────────────────────┘
 ```
 
