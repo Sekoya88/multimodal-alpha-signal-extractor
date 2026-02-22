@@ -285,37 +285,45 @@ async def run_vlm_chain(
     elif pipeline_cfg.vlm_provider == "llama_cpp":
         # ---- LLAMA.CPP DIRECT GGUF BACKEND (fine-tuned model) ----
         from llama_cpp import Llama
+        from llama_cpp.llama_chat_format import Qwen25VLChatHandler
 
         gguf_path = pipeline_cfg.llama_cpp_model_path
+        mmproj_path = pipeline_cfg.llama_cpp_mmproj_path
         logger.info(f"Invoking VLM via llama.cpp ({Path(gguf_path).name})...")
 
         # Load model (cached as module-level singleton for performance)
         global _llama_model
         if "_llama_model" not in globals() or _llama_model is None:
-            logger.info("  Loading GGUF model (first call, may take ~10s)...")
+            logger.info("  Loading GGUF model and Vision Projector (mmproj) (first call, may take ~10s)...")
+            
+            chat_handler = Qwen25VLChatHandler(clip_model_path=mmproj_path)
+            
             _llama_model = Llama(
                 model_path=gguf_path,
+                chat_handler=chat_handler,
                 n_gpu_layers=pipeline_cfg.llama_cpp_n_gpu_layers,
                 n_ctx=pipeline_cfg.llama_cpp_n_ctx,
                 verbose=False,
             )
             logger.info("  ✓ Model loaded")
 
-        # Build prompt for text-only inference (GGUF text model)
-        img_b64 = encode_image_to_base64(image_path)
-        full_prompt = (
-            f"<|im_start|>system\n{system_prompt}<|im_end|>\n"
-            f"<|im_start|>user\n{user_text}<|im_end|>\n"
-            f"<|im_start|>assistant\n"
-        )
+        # Build prompt for Vision-Language inference
+        img_data_uri = encode_image_as_data_uri(image_path)
+        
+        messages = [
+            {"role": "system", "content": system_prompt},
+            {"role": "user", "content": [
+                {"type": "image_url", "image_url": {"url": img_data_uri}},
+                {"type": "text", "text": user_text},
+            ]}
+        ]
 
-        result = _llama_model(
-            full_prompt,
+        result = _llama_model.create_chat_completion(
+            messages=messages,
             max_tokens=pipeline_cfg.vlm_max_tokens,
             temperature=pipeline_cfg.vlm_temperature,
-            stop=["<|im_end|>"],
         )
-        raw_content = result["choices"][0]["text"]
+        raw_content = result["choices"][0]["message"]["content"]
 
     else:
         # ---- vLLM BACKEND (CUDA machines) ----

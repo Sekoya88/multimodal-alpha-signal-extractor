@@ -105,11 +105,12 @@ class PipelineConfig:
     vlm_provider: str = "llama_cpp"  # ← uses fine-tuned GGUF
     ollama_vlm_model: str = "llama3.2-vision:11b"
 
-    # llama.cpp direct GGUF backend (Apple Silicon Metal)
-    llama_cpp_model_path: str = str(Path.home() / "Downloads" / "alpha-signal-q4km.gguf")
-    llama_cpp_n_gpu_layers: int = -1  # -1 = all layers on GPU (Metal)
-    llama_cpp_n_ctx: int = 2048
-
+    # LLAMA.CPP BACKEND (Apple Silicon M4 - Fine-Tuned GGUF)
+    # --------------------------------------------------------------------------
+    llama_cpp_model_path: str = os.path.expanduser("~/Downloads/alpha-signal-q4km.gguf")
+    llama_cpp_mmproj_path: str = str(PROJECT_ROOT / "models" / "mmproj-Qwen2.5-VL-3B-Instruct-f16.gguf")
+    llama_cpp_n_gpu_layers: int = -1  # -1 for all layers on Metal
+    llama_cpp_n_ctx: int = 8192       # Vision tokens require a large context window
     # vLLM fallback (for CUDA machines only)
     vllm_base_url: str = "http://localhost:8000/v1"
     vllm_api_key: str = "alpha-signal-key"
