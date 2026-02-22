@@ -1,11 +1,7 @@
-"""
-config.py — Centralized Configuration for the Multimodal Alpha-Signal Extractor.
+"""config.py — Centralized configuration for the Multimodal Alpha-Signal Extractor.
 
-All hyperparameters, paths, and API endpoints are defined here as frozen
-dataclasses to ensure immutability and type-safety across the pipeline.
-
-Author: Nicolas
-License: MIT
+All configurable parameters live here so that the pipeline scripts
+remain clean and DRY.
 """
 
 from __future__ import annotations
@@ -102,12 +98,17 @@ class PipelineConfig:
     On CUDA machines, the VLM can be served via vLLM instead.
     """
 
-    # Ollama endpoint for VLM (vision + text)
-    vlm_provider: str = "ollama"  # "ollama" or "vllm"
-    # Default: generic model. After fine-tuning, change to "alpha-signal-vlm"
-    # Note: Ollama only supports llama3.2-vision for VLM inference currently.
-    # Qwen2.5-VL GGUFs crash due to unsupported multi-dim positional embeddings.
+    # VLM backend: "ollama", "vllm", or "llama_cpp"
+    # - ollama: llama3.2-vision (only VLM Ollama supports)
+    # - llama_cpp: direct GGUF loading (for fine-tuned Qwen2.5-VL)
+    # - vllm: CUDA machines only
+    vlm_provider: str = "llama_cpp"  # ← uses fine-tuned GGUF
     ollama_vlm_model: str = "llama3.2-vision:11b"
+
+    # llama.cpp direct GGUF backend (Apple Silicon Metal)
+    llama_cpp_model_path: str = str(Path.home() / "Downloads" / "alpha-signal-q4km.gguf")
+    llama_cpp_n_gpu_layers: int = -1  # -1 = all layers on GPU (Metal)
+    llama_cpp_n_ctx: int = 2048
 
     # vLLM fallback (for CUDA machines only)
     vllm_base_url: str = "http://localhost:8000/v1"

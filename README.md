@@ -11,7 +11,7 @@
 │  │ (Image)  │    │  (Llama3.2V) │    │  Signal (JSON)   │  │
 │  └──────────┘    └──────────────┘    └────────┬─────────┘  │
 │                                               │ merge      │
-│  ┌──────────┐    ┌──────────────┐    ┌────────▼─────────┐  │
+│  ┌──────────┐    ┌──────────────┐    ┌──────────────────┐  │
 │  │ News     │───▶│  Ollama LLM  │───▶│  Final Trading   │  │
 │  │ (Text)   │    │  (Llama3-8b) │    │  Decision (JSON) │  │
 │  └──────────┘    └──────────────┘    └──────────────────┘  │
@@ -24,8 +24,8 @@
 
 | Composant | Outil | Rôle |
 |-----------|-------|------|
-| Fine-tuning | **Unsloth** + QLoRA | Adapter Qwen2-VL-7B sur dataset multimodal (Google Colab T4) |
-| Inférence VLM | **Ollama** (M4) / **vLLM** (CUDA) | Servir le VLM localement via API |
+| Fine-tuning | **Unsloth** + QLoRA | Adapter Qwen2.5-VL-3B sur dataset multimodal (Google Colab T4) |
+| Inférence VLM | **Ollama** (M4) / **llama-cpp** (Metal M4) | Servir le VLM localement via API ou GGUF direct |
 | Orchestration | **LangChain** | Prompt multimodal, chaînage async, parsing Pydantic |
 | Sentiment texte | **Ollama** | Extraction de sentiment via Llama3-8b local |
 
@@ -60,6 +60,9 @@ ollama pull llama3:8b
 # Python
 python3 -m venv .venv && source .venv/bin/activate
 pip install -r requirements.txt
+
+# (Optionnel) Pour inférence GGUF directe avec le modèle fine-tuné sur Apple Silicon
+CMAKE_ARGS="-DGGML_METAL=on" pip install llama-cpp-python --force-reinstall --no-cache-dir
 ```
 
 ### 2. Générer le Dataset
@@ -74,7 +77,8 @@ python 01_generate_dataset.py
 1. Upload `training_data.jsonl` sur Google Colab
 2. `pip install unsloth` dans Colab (Runtime → T4 GPU)
 3. `python 02_finetune_colab.py`
-4. Télécharger le `.gguf` → `ollama create alpha-signal -f Modelfile`
+4. Télécharger le `.gguf` sur votre Mac
+5. Exécuter le pipeline via `llama_cpp` (Metal) en configurant `config.py`
 
 ### 4. Exécuter le Pipeline
 

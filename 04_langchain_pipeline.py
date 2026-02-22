@@ -280,6 +280,42 @@ async def run_vlm_chain(
         ]
 
         response = await llm.ainvoke(messages)
+        raw_content = response.content
+
+    elif pipeline_cfg.vlm_provider == "llama_cpp":
+        # ---- LLAMA.CPP DIRECT GGUF BACKEND (fine-tuned model) ----
+        from llama_cpp import Llama
+
+        gguf_path = pipeline_cfg.llama_cpp_model_path
+        logger.info(f"Invoking VLM via llama.cpp ({Path(gguf_path).name})...")
+
+        # Load model (cached as module-level singleton for performance)
+        global _llama_model
+        if "_llama_model" not in globals() or _llama_model is None:
+            logger.info("  Loading GGUF model (first call, may take ~10s)...")
+            _llama_model = Llama(
+                model_path=gguf_path,
+                n_gpu_layers=pipeline_cfg.llama_cpp_n_gpu_layers,
+                n_ctx=pipeline_cfg.llama_cpp_n_ctx,
+                verbose=False,
+            )
+            logger.info("  ✓ Model loaded")
+
+        # Build prompt for text-only inference (GGUF text model)
+        img_b64 = encode_image_to_base64(image_path)
+        full_prompt = (
+            f"<|im_start|>system\n{system_prompt}<|im_end|>\n"
+            f"<|im_start|>user\n{user_text}<|im_end|>\n"
+            f"<|im_start|>assistant\n"
+        )
+
+        result = _llama_model(
+            full_prompt,
+            max_tokens=pipeline_cfg.vlm_max_tokens,
+            temperature=pipeline_cfg.vlm_temperature,
+            stop=["<|im_end|>"],
+        )
+        raw_content = result["choices"][0]["text"]
 
     else:
         # ---- vLLM BACKEND (CUDA machines) ----
@@ -309,9 +345,9 @@ async def run_vlm_chain(
         ]
 
         response = await llm.ainvoke(messages)
+        raw_content = response.content
 
     # Parse the response
-    raw_content = response.content
     logger.debug(f"Raw VLM response: {raw_content[:300]}...")
 
     # Try to extract JSON from response (model might wrap it in markdown)
@@ -498,6 +534,8 @@ def merge_signals(
     vlm_model = (
         pipeline_cfg.ollama_vlm_model
         if pipeline_cfg.vlm_provider == "ollama"
+        else Path(pipeline_cfg.llama_cpp_model_path).name
+        if pipeline_cfg.vlm_provider == "llama_cpp"
         else pipeline_cfg.vllm_model_name
     )
 
@@ -513,7 +551,7 @@ def merge_signals(
             "sentiment_model": pipeline_cfg.ollama_model,
             "signals_aligned": vlm_signal.action == sentiment_bias,
             "platform": "Apple Silicon M4"
-            if pipeline_cfg.vlm_provider == "ollama"
+            if pipeline_cfg.vlm_provider in ("ollama", "llama_cpp")
             else "CUDA GPU",
         },
     )
