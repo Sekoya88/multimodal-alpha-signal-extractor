@@ -1,0 +1,36 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+dist/
+build/
+*.egg
+
+# Virtual env
+.venv/
+venv/
+env/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+.DS_Store
+
+# Models (too large for git)
+models/
+*.gguf
+*.safetensors
+*.bin
+*.pt
+*.pth
+
+# Dataset outputs (regenerable)
+dataset/charts/
+dataset/demo_chart.png
+dataset/live_*.png
+dataset/decision_*.json
+
+# Secrets
+.env

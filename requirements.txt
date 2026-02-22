@@ -1,0 +1,42 @@
+# ============================================================================
+# Multimodal Alpha-Signal Extractor — Dependencies
+# ============================================================================
+# Install: pip install -r requirements.txt
+# Note: unsloth and vllm require CUDA. Install them on a GPU machine.
+# ============================================================================
+
+# ---------- Step 1: Dataset Generation ----------
+yfinance>=0.2.36
+mplfinance>=0.12.9b7
+pandas>=2.1.0
+numpy>=1.26.0
+Pillow>=10.0.0
+ta>=0.11.0
+
+# ---------- Step 2: Fine-Tuning (GPU only) ----------
+# Install unsloth separately:  pip install unsloth
+# unsloth
+torch>=2.2.0
+transformers>=4.45.0
+trl>=0.12.0
+datasets>=3.0.0
+accelerate>=0.34.0
+bitsandbytes>=0.44.0
+peft>=0.13.0
+
+# ---------- Step 3: vLLM Serving (GPU only) ----------
+# Install vllm separately:  pip install vllm
+# vllm>=0.6.0
+
+# ---------- Step 4: LangChain Orchestration ----------
+langchain>=0.3.0
+langchain-openai>=0.2.0
+langchain-ollama>=0.2.0
+langchain-core>=0.3.0
+pydantic>=2.6.0
+httpx>=0.27.0
+
+# ---------- Utilities ----------
+python-dotenv>=1.0.0
+loguru>=0.7.0
+tenacity>=8.2.0

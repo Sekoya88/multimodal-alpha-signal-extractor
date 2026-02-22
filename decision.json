@@ -1,0 +1,30 @@
+{
+  "vlm_signal": {
+    "action": "BUY",
+    "confidence": 0.8,
+    "entry_price": 180.0,
+    "stop_loss": 175.0,
+    "take_profit": 190.0,
+    "reasoning": "Apple Inc. a annoncé des résultats trimestriels record avec une hausse de 12% du chiffre d'affaires. Les analystes de Goldman Sachs relèvent leur objectif de cours de 15%. Le segment Services atteint un nouveau sommet historique. Le graphique financier montre une tendance ascendante avec des signaux techniques positifs, ce qui suggère un achat à court terme."
+  },
+  "sentiment": {
+    "sentiment": "BULLISH",
+    "intensity": 0.8,
+    "key_factors": [
+      "record-breaking quarterly results",
+      "12% revenue growth",
+      "Goldman Sachs raises price target"
+    ],
+    "summary": "Apple's strong quarterly performance drives a bullish sentiment in the market."
+  },
+  "final_action": "BUY",
+  "final_confidence": 0.8,
+  "meta": {
+    "timestamp": "2026-02-21T17:16:17.376860+00:00",
+    "vlm_model": "llama3.2-vision:11b",
+    "vlm_provider": "ollama",
+    "sentiment_model": "llama3:8b",
+    "signals_aligned": true,
+    "platform": "Apple Silicon M4"
+  }
+}
