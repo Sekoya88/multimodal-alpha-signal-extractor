@@ -10,6 +10,7 @@
 │  │ Chart    │───▶│ VLM (Vision-Language Model)      │      │
 │  │ (Image)  │    │ ├── [Prod] llama3.2-vision (Ollama)      │      │
 │  └──────────┘    │ └── [Custom] Qwen2.5-VL (llama_cpp)      │      │
+│         │        │               └── + mmproj.gguf          │      │
 │         │        └─────────────────┬────────────────┘      │
 │         │                          │ VLM Signal JSON       │
 │         │                          ▼                       │
