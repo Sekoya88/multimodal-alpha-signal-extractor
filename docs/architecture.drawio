@@ -1,0 +1,85 @@
+<mxfile host="app.diagrams.net" modified="2024-03-07T00:00:00.000Z" agent="Mozilla/5.0" version="24.0.0" type="device">
+  <diagram name="Alpha-Signal Architecture" id="arch-01">
+    <mxGraphModel dx="1000" dy="1000" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="1169" pageHeight="827" math="0" shadow="0">
+      <root>
+        <mxCell id="0"/>
+        <mxCell id="1" parent="0"/>
+        
+        <!-- Presentation Layer -->
+        <mxCell id="presentation_layer" value="Presentation Layer" style="swimlane;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;fontStyle=1" vertex="1" parent="1">
+          <mxGeometry x="40" y="40" width="200" height="240" as="geometry"/>
+        </mxCell>
+        <mxCell id="streamlit" value="Streamlit App" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#d6b656;" vertex="1" parent="presentation_layer">
+          <mxGeometry x="20" y="60" width="160" height="60" as="geometry"/>
+        </mxCell>
+        <mxCell id="cli" value="CLI (Command Line)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#d6b656;" vertex="1" parent="presentation_layer">
+          <mxGeometry x="20" y="140" width="160" height="60" as="geometry"/>
+        </mxCell>
+
+        <!-- Application Layer -->
+        <mxCell id="app_layer" value="Application Layer (Use Cases &amp; Ports)" style="swimlane;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;fontStyle=1" vertex="1" parent="1">
+          <mxGeometry x="320" y="40" width="240" height="400" as="geometry"/>
+        </mxCell>
+        <mxCell id="usecases" value="AnalyzeMarketUseCase&#10;(Orchestrator)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#e1d5e7;strokeColor=#9673a6;" vertex="1" parent="app_layer">
+          <mxGeometry x="40" y="60" width="160" height="60" as="geometry"/>
+        </mxCell>
+        <mxCell id="ports" value="Ports (Interfaces)&#10;- VlmPort&#10;- SentimentPort&#10;- MarketDataPort&#10;- ChartRendererPort" style="shape=note;whiteSpace=wrap;html=1;backgroundOutline=1;darkOpacity=0.05;fillColor=#f8cecc;strokeColor=#b85450;align=left;spacingLeft=10;" vertex="1" parent="app_layer">
+          <mxGeometry x="40" y="180" width="160" height="120" as="geometry"/>
+        </mxCell>
+
+        <!-- Domain Layer -->
+        <mxCell id="domain_layer" value="Domain Layer (Entities &amp; Logic)" style="swimlane;whiteSpace=wrap;html=1;fillColor=#ffe6cc;strokeColor=#d79b00;fontStyle=1" vertex="1" parent="1">
+          <mxGeometry x="640" y="40" width="240" height="400" as="geometry"/>
+        </mxCell>
+        <mxCell id="models" value="Models (Value Objects)&#10;- TradingSignal&#10;- SentimentResult&#10;- TradingDecision" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#d6b656;align=left;spacingLeft=10;" vertex="1" parent="domain_layer">
+          <mxGeometry x="40" y="60" width="160" height="100" as="geometry"/>
+        </mxCell>
+        <mxCell id="services" value="Domain Services&#10;(SignalMergerService)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#e1d5e7;strokeColor=#9673a6;" vertex="1" parent="domain_layer">
+          <mxGeometry x="40" y="200" width="160" height="60" as="geometry"/>
+        </mxCell>
+        <mxCell id="indicators" value="Indicators (Pure Math)&#10;(RSI, Bollinger)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#e1d5e7;strokeColor=#9673a6;" vertex="1" parent="domain_layer">
+          <mxGeometry x="40" y="300" width="160" height="60" as="geometry"/>
+        </mxCell>
+
+        <!-- Infrastructure Layer -->
+        <mxCell id="infra_layer" value="Infrastructure Layer (Adapters)" style="swimlane;horizontal=0;whiteSpace=wrap;html=1;fillColor=#f5f5f5;strokeColor=#666666;fontStyle=1;fontColor=#333333;" vertex="1" parent="1">
+          <mxGeometry x="40" y="480" width="840" height="200" as="geometry"/>
+        </mxCell>
+        <mxCell id="yfinance" value="YFinanceAdapter&#10;(Market &amp; News)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;" vertex="1" parent="infra_layer">
+          <mxGeometry x="80" y="40" width="140" height="60" as="geometry"/>
+        </mxCell>
+        <mxCell id="llamacpp" value="LlamaCppVlmAdapter&#10;(Fine-tuned Qwen2.5)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;" vertex="1" parent="infra_layer">
+          <mxGeometry x="260" y="40" width="140" height="60" as="geometry"/>
+        </mxCell>
+        <mxCell id="ollama" value="OllamaSentimentAdapter&#10;(LLaMA 3)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;" vertex="1" parent="infra_layer">
+          <mxGeometry x="440" y="40" width="140" height="60" as="geometry"/>
+        </mxCell>
+        <mxCell id="mplfinance" value="MplfinanceAdapter&#10;(Chart Generator)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;" vertex="1" parent="infra_layer">
+          <mxGeometry x="620" y="40" width="140" height="60" as="geometry"/>
+        </mxCell>
+
+        <!-- Connections -->
+        <!-- Pres -> App -->
+        <mxCell id="edge_pres_app" value="Calls" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;exitX=1;exitY=0.5;exitDx=0;exitDy=0;entryX=0;entryY=0.5;entryDx=0;entryDy=0;" edge="1" parent="1" source="presentation_layer" target="usecases">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+
+        <!-- App -> Domain -->
+        <mxCell id="edge_app_dom" value="Uses" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;exitX=1;exitY=0.5;exitDx=0;exitDy=0;entryX=0;entryY=0.5;entryDx=0;entryDy=0;" edge="1" parent="1" source="usecases" target="domain_layer">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        
+        <!-- UseCase -> Ports -->
+        <mxCell id="edge_uc_ports" value="Depends on" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;exitX=0.5;exitY=1;exitDx=0;exitDy=0;entryX=0.5;entryY=0;entryDx=0;entryDy=0;dashed=1;" edge="1" parent="1" source="usecases" target="ports">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+
+        <!-- Infra -> Ports (Implements) -->
+        <mxCell id="edge_infra_ports" value="Implements" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;exitX=0.5;exitY=0;exitDx=0;exitDy=0;entryX=0.5;entryY=1;entryDx=0;entryDy=0;dashed=1;endArrow=block;endFill=0;" edge="1" parent="1" source="infra_layer" target="ports">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+
+      </root>
+    </mxGraphModel>
+  </diagram>
+</mxfile>

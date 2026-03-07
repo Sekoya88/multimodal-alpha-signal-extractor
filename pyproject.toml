@@ -50,15 +50,14 @@ test = [
 ]
 
 [project.scripts]
-alpha-signal = "src.alpha_signal.pipeline:run_pipeline_sync"
+alpha-signal = "alpha_signal.presentation.cli:main"
 
 [build-system]
 requires = ["setuptools>=68.0", "wheel"]
-build-backend = "setuptools.backends._legacy:_Backend"
+build-backend = "setuptools.build_meta"
 
 [tool.setuptools.packages.find]
-where = ["."]
-include = ["src*"]
+where = ["src"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

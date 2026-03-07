@@ -1,115 +1,14 @@
-"""chart_renderer.py — Shared chart rendering (mplfinance + Plotly).
+"""components.py — Shared presentation components (Plotly).
 
-Consolidates chart rendering logic from 01_generate_dataset.py and
-05_live_analysis.py into a single reusable module.
+Consolidates UI components like interactive charts for the Streamlit app.
 """
 
 from __future__ import annotations
 
-import io
-from datetime import datetime
-from pathlib import Path
-
-import mplfinance as mpf
 import pandas as pd
 import plotly.graph_objects as go
 from plotly.subplots import make_subplots
 
-
-# ============================================================================
-# Mplfinance renderer (for dataset generation — static PNG)
-# ============================================================================
-
-def render_candlestick_png(
-    df: pd.DataFrame,
-    title: str = "",
-    dpi: int = 100,
-    figsize: tuple[int, int] = (12, 8),
-) -> bytes:
-    """Render a candlestick chart with Bollinger Bands and RSI as PNG bytes.
-
-    Expects the DataFrame to have columns:
-    Open, High, Low, Close, Volume, RSI, BB_Upper, BB_Lower, BB_Middle.
-
-    Args:
-        df: OHLCV + indicator DataFrame.
-        title: Chart title.
-        dpi: Image resolution.
-        figsize: Figure size as (width, height).
-
-    Returns:
-        PNG image bytes.
-    """
-    add_plots = [
-        mpf.make_addplot(df["BB_Upper"], color="steelblue", linestyle="--", width=0.8),
-        mpf.make_addplot(df["BB_Lower"], color="steelblue", linestyle="--", width=0.8),
-        mpf.make_addplot(df["BB_Middle"], color="orange", linestyle="-", width=0.8),
-        mpf.make_addplot(df["RSI"], panel=2, color="purple", ylabel="RSI", width=1.0),
-        mpf.make_addplot(
-            pd.Series(30.0, index=df.index), panel=2, color="green",
-            linestyle="--", width=0.5,
-        ),
-        mpf.make_addplot(
-            pd.Series(70.0, index=df.index), panel=2, color="red",
-            linestyle="--", width=0.5,
-        ),
-    ]
-
-    mc = mpf.make_marketcolors(
-        up="limegreen", down="tomato", edge="inherit",
-        wick="inherit", volume="steelblue",
-    )
-    style = mpf.make_mpf_style(marketcolors=mc, gridstyle=":", gridcolor="gray")
-
-    buf = io.BytesIO()
-    mpf.plot(
-        df[["Open", "High", "Low", "Close", "Volume"]],
-        type="candle",
-        style=style,
-        addplot=add_plots,
-        volume=True,
-        title=title,
-        figsize=figsize,
-        panel_ratios=(4, 1, 2),
-        savefig=dict(fname=buf, dpi=dpi, bbox_inches="tight"),
-    )
-    buf.seek(0)
-    return buf.read()
-
-
-def save_live_chart(
-    df: pd.DataFrame,
-    ticker: str,
-    output_dir: Path,
-    dpi: int = 120,
-) -> Path:
-    """Render and save a live chart to disk.
-
-    Args:
-        df: OHLCV + indicator DataFrame.
-        ticker: Ticker symbol for the title.
-        output_dir: Directory to save the chart.
-        dpi: Image resolution.
-
-    Returns:
-        Path to the saved PNG file.
-    """
-    output_dir.mkdir(parents=True, exist_ok=True)
-    chart_path = output_dir / f"live_{ticker}_{datetime.now().strftime('%Y%m%d_%H%M')}.png"
-
-    title = (
-        f"{ticker} | {df.index[0].strftime('%Y-%m-%d')} → "
-        f"{df.index[-1].strftime('%Y-%m-%d')} | LIVE"
-    )
-
-    img_bytes = render_candlestick_png(df, title=title, dpi=dpi, figsize=(14, 9))
-    chart_path.write_bytes(img_bytes)
-    return chart_path
-
-
-# ============================================================================
-# Plotly renderer (for Streamlit — interactive HTML)
-# ============================================================================
 
 def create_plotly_chart(
     df: pd.DataFrame,
