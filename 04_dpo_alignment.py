@@ -105,6 +105,24 @@ def _load_or_build_pairs(service: DPOAlignmentService, max_samples: int | None) 
     return pairs
 
 
+def _normalize_prompt(r: dict) -> dict:
+    """Unify prompt so content is always list (PyArrow 'cannot mix list and non-list').
+    User messages need image placeholder for Qwen2.5-VL; system can be text-only.
+    """
+    prompt = r["prompt"]
+    out = []
+    for msg in prompt:
+        c = msg.get("content")
+        if isinstance(c, str):
+            if msg.get("role") == "user":
+                out.append({"role": "user", "content": [{"type": "image"}, {"type": "text", "text": c}]})
+            else:
+                out.append({"role": msg["role"], "content": [{"type": "text", "text": c}]})
+        else:
+            out.append(msg)
+    return {**r, "prompt": out}
+
+
 def _dataset_from_pairs_file(pairs_path: Path):
     """Load pairs from JSONL and rebuild PIL images."""
     from PIL import Image
@@ -130,7 +148,26 @@ def _dataset_from_pairs_file(pairs_path: Path):
         }
 
     decoded = [_decode(r) for r in records]
-    return Dataset.from_list(decoded)
+    # Normalize prompt so all message content is list (avoids PyArrow "cannot mix list and non-list")
+    decoded = [_normalize_prompt(d) for d in decoded]
+
+    try:
+        return Dataset.from_list(decoded)
+    except Exception as e:
+        err_str = str(e).lower()
+        if "mix list and non-list" in err_str or "arrowinvalid" in err_str or "arrow" in err_str:
+            # Fallback: numpy arrays play nicer with Arrow than PIL; processor accepts both
+            import numpy as np
+            decoded_np = []
+            for d in decoded:
+                decoded_np.append({
+                    "images": [np.array(img) for img in d["images"]],
+                    "prompt": d["prompt"],
+                    "chosen": d["chosen"],
+                    "rejected": d["rejected"],
+                })
+            return Dataset.from_list(decoded_np)
+        raise
 
 
 def main() -> int:

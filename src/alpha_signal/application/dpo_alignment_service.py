@@ -8,10 +8,13 @@ from __future__ import annotations
 
 import json
 import logging
+import os
 from pathlib import Path
 from typing import Any
 
 from alpha_signal.application.ports import DPOAlignmentPort
+
+# Unsloth import is lazy in _run_dpo_trainer to allow DPO_USE_UNSLOTH=0 fallback (avoids RecursionError on Colab)
 
 logger = logging.getLogger(__name__)
 
@@ -78,9 +81,10 @@ class DPOAlignmentService(DPOAlignmentPort):
             )
             system_msg = next(m for m in messages if m["role"] == "system")
             system_text = system_msg["content"][0]["text"] if system_msg["content"] else ""
+            # content as list everywhere so PyArrow schema is consistent (avoids "cannot mix list and non-list")
             prompt = [
-                {"role": "system", "content": system_text},
-                {"role": "user", "content": user_text},
+                {"role": "system", "content": [{"type": "text", "text": system_text}]},
+                {"role": "user", "content": [{"type": "image"}, {"type": "text", "text": user_text}]},
             ]
 
             # Oracle (chosen) - from assistant = ground truth from forward_return
@@ -180,10 +184,157 @@ def _synthetic_rejected(oracle_obj: dict[str, Any], oracle_action: str) -> str:
     return json.dumps(rejected_obj, ensure_ascii=False)
 
 
-    def _run_dpo_trainer(dataset: Any, output_dir: Path) -> dict[str, float]:
-    """Run TRL DPOTrainer and compute calibration metric."""
+from dataclasses import dataclass
+
+# Shim for transformers 5: TRL 0.24 expects MODEL_FOR_VISION_2_SEQ_MAPPING_NAMES
+def _ensure_trl_vision_shim() -> None:
+    import transformers.models.auto.modeling_auto as auto
+    if not hasattr(auto, "MODEL_FOR_VISION_2_SEQ_MAPPING_NAMES"):
+        from collections import OrderedDict
+        # Empty mapping so TRL import succeeds; DPO uses explicit Qwen2_5_VLForConditionalGeneration
+        auto.MODEL_FOR_VISION_2_SEQ_MAPPING_NAMES = OrderedDict()
+
+
+def _import_trl_collator():
+    _ensure_trl_vision_shim()
+    from trl.trainer.dpo_trainer import DataCollatorForPreference
+    return DataCollatorForPreference
+
+
+DataCollatorForPreference = _import_trl_collator()
+
+@dataclass
+class VisionDPODataCollator(DataCollatorForPreference):
+    """Custom collator to handle Qwen2.5-VL vision tensors correctly for DPO.
+    TRL's default pads pixel_values (making them 3D), but Qwen expects 2D concats.
+    """
+    def torch_call(self, examples: list[dict[str, Any]]) -> dict[str, Any]:
+        import torch
+        pixel_values = []
+        image_grid_thw = []
+        for example in examples:
+            if "pixel_values" in example:
+                pixel_values.append(torch.tensor(example.pop("pixel_values")))
+            if "image_grid_thw" in example:
+                image_grid_thw.append(torch.tensor(example.pop("image_grid_thw")))
+                
+        # Let TRL pad the text inputs
+        batch = super().torch_call(examples)
+        
+        if pixel_values:
+            batch["pixel_values"] = torch.cat(pixel_values, dim=0)
+        if image_grid_thw:
+            # We rename to image_sizes so TRL's DPOTrainer automatically duplicates 
+            # it for chosen/rejected along with pixel_values.
+            batch["image_sizes"] = torch.cat(image_grid_thw, dim=0)
+            
+        return batch
+
+
+def _patched_process_row(
+    features,
+    processing_class,
+    max_prompt_length=None,
+    max_completion_length=None,
+    add_special_tokens=True,
+):
+    """Standalone patched process_row to avoid multiprocessing pickling timeouts.
+    Ensures <|image_pad|> in prompt via processor.apply_chat_template before processor().
+    Extracts chosen/rejected text from list format for tokenizer.
+    """
     import torch
-    from unsloth import FastVisionModel
+    processor, tokenizer = processing_class, processing_class.tokenizer
+
+    # Build prompt messages with actual images so processor produces correct <|image_pad|>
+    prompt_msgs = []
+    for msg in features["prompt"]:
+        if msg.get("role") == "user":
+            content = []
+            for c in msg.get("content", []):
+                if isinstance(c, dict) and c.get("type") == "image":
+                    content.append({"type": "image", "image": features["images"][0]})
+                else:
+                    content.append(c)
+            prompt_msgs.append({"role": "user", "content": content})
+        else:
+            prompt_msgs.append(msg)
+
+    # Apply template to get string with <|image_pad|> (fixes tokens:0 vs features:1820)
+    prompt_str = processor.apply_chat_template(
+        prompt_msgs,
+        tokenize=False,
+        add_generation_prompt=True,
+    )
+    processed_features = processor(images=features["images"], text=prompt_str, add_special_tokens=False)
+
+    prompt_input_ids = processed_features["input_ids"][0]
+    if isinstance(prompt_input_ids, torch.Tensor):
+        prompt_input_ids = prompt_input_ids.tolist()
+
+    # Qwen2.5-VL pixel_values is [num_patches, channels], no batch dim.
+    pixel_values = processed_features["pixel_values"]
+    if isinstance(pixel_values, torch.Tensor):
+        if pixel_values.dim() == 3 and pixel_values.shape[0] == 1:
+            pixel_values = pixel_values[0]
+        pixel_values = pixel_values.tolist()
+
+    # chosen/rejected can be [{"role":"assistant","content":"..."}] or plain string
+    chosen = features["chosen"]
+    if isinstance(chosen, list) and chosen and isinstance(chosen[0], dict):
+        chosen = chosen[0].get("content", chosen[0].get("text", ""))
+    rejected = features["rejected"]
+    if isinstance(rejected, list) and rejected and isinstance(rejected[0], dict):
+        rejected = rejected[0].get("content", rejected[0].get("text", ""))
+
+    chosen_input_ids = tokenizer(str(chosen), add_special_tokens=False)["input_ids"]
+    rejected_input_ids = tokenizer(str(rejected), add_special_tokens=False)["input_ids"]
+
+    if add_special_tokens:
+        if tokenizer.bos_token_id is not None:
+            prompt_input_ids = [tokenizer.bos_token_id] + prompt_input_ids
+        if tokenizer.eos_token_id is not None:
+            prompt_input_ids = prompt_input_ids + [tokenizer.eos_token_id]
+    chosen_input_ids = chosen_input_ids + [tokenizer.eos_token_id]
+    rejected_input_ids = rejected_input_ids + [tokenizer.eos_token_id]
+
+    if max_prompt_length is not None:
+        prompt_input_ids = prompt_input_ids[-max_prompt_length:]
+    if max_completion_length is not None:
+        chosen_input_ids = chosen_input_ids[:max_completion_length]
+        rejected_input_ids = rejected_input_ids[:max_completion_length]
+
+    output = {
+        "prompt_input_ids": prompt_input_ids,
+        "pixel_values": pixel_values,
+        "chosen_input_ids": chosen_input_ids,
+        "rejected_input_ids": rejected_input_ids,
+    }
+
+    if "pixel_attention_mask" in processed_features:
+        mask = processed_features["pixel_attention_mask"]
+        if isinstance(mask, torch.Tensor):
+            mask = mask[0].tolist() if mask.dim() == 2 else mask.tolist()
+        output["pixel_attention_mask"] = mask
+        
+    if "image_grid_thw" in processed_features:
+        grid = processed_features["image_grid_thw"]
+        if isinstance(grid, torch.Tensor):
+            if grid.dim() == 3 and grid.shape[0] == 1:
+                grid = grid[0]
+            grid = grid.tolist()
+        output["image_grid_thw"] = grid
+
+    return output
+
+
+def _run_dpo_trainer_standard(dataset: Any, output_dir: Path) -> dict[str, float]:
+    """DPO training with standard Transformers+PEFT+TRL (no Unsloth).
+    Use when DPO_USE_UNSLOTH=0 to avoid RecursionError with bitsandbytes on Colab T4.
+    Slower but stable. See: https://github.com/unslothai/unsloth/issues/1921
+    """
+    import torch
+    from transformers import AutoProcessor, Qwen2_5_VLForConditionalGeneration, BitsAndBytesConfig
+    from peft import LoraConfig, get_peft_model, prepare_model_for_kbit_training
     from trl import DPOTrainer, DPOConfig
 
     from config import dpo_cfg
@@ -191,22 +342,50 @@ def _synthetic_rejected(oracle_obj: dict[str, Any], oracle_action: str) -> str:
     if not torch.cuda.is_available():
         raise RuntimeError("DPO training requires CUDA")
 
-    model, processor = FastVisionModel.from_pretrained(
-        model_name=dpo_cfg.base_model,
-        max_seq_length=dpo_cfg.max_seq_length,
+    bnb_config = BitsAndBytesConfig(
         load_in_4bit=dpo_cfg.load_in_4bit,
-        dtype=None,
+        bnb_4bit_compute_dtype=torch.bfloat16 if torch.cuda.is_bf16_supported() else torch.float16,
+        bnb_4bit_quant_type="nf4",
     )
-    model = FastVisionModel.get_peft_model(
-        model,
+    model = Qwen2_5_VLForConditionalGeneration.from_pretrained(
+        "Qwen/Qwen2.5-VL-3B-Instruct",
+        quantization_config=bnb_config,
+        device_map="auto",
+        trust_remote_code=True,
+    )
+    processor = AutoProcessor.from_pretrained("Qwen/Qwen2.5-VL-3B-Instruct", trust_remote_code=True)
+    model = prepare_model_for_kbit_training(model)
+    lora_config = LoraConfig(
         r=dpo_cfg.lora_r,
         lora_alpha=dpo_cfg.lora_alpha,
         lora_dropout=dpo_cfg.lora_dropout,
-        target_modules="all-linear",
-        use_gradient_checkpointing="unsloth",
-        random_state=dpo_cfg.seed,
+        target_modules=["q_proj", "k_proj", "v_proj", "o_proj", "gate_proj", "up_proj", "down_proj"],
+        bias="none",
+        task_type="CAUSAL_LM",
     )
-    FastVisionModel.for_training(model)
+    model = get_peft_model(model, lora_config)
+    if not hasattr(processor, "pad"):
+        processor.pad = processor.tokenizer.pad
+
+    from trl import DPOTrainer as TRL_DPOTrainer
+    TRL_DPOTrainer.process_row = staticmethod(_patched_process_row)
+    original_forward = model.forward
+
+    def dpo_vision_forward(*f_args, **f_kwargs):
+        if "image_sizes" in f_kwargs and "image_grid_thw" not in f_kwargs:
+            f_kwargs["image_grid_thw"] = f_kwargs.pop("image_sizes")
+        return original_forward(*f_args, **f_kwargs)
+
+    model.forward = dpo_vision_forward
+
+    from datasets import Dataset
+    _orig_map = Dataset.map
+
+    def _no_mp_map(self, *a, **kw):
+        kw.pop("num_proc", None)
+        return _orig_map(self, *a, **kw)
+
+    Dataset.map = _no_mp_map
 
     args = DPOConfig(
         output_dir=str(output_dir),
@@ -224,17 +403,128 @@ def _synthetic_rejected(oracle_obj: dict[str, Any], oracle_action: str) -> str:
         save_steps=50,
         save_total_limit=2,
         remove_unused_columns=False,
-        # Required for newer TRL to process chat templates correctly
-        dataset_num_proc=1,
+        dataset_num_proc=None,
+        torch_compile=False,
+    )
+
+    trainer = TRL_DPOTrainer(
+        model=model,
+        args=args,
+        train_dataset=dataset,
+        processing_class=processor,
+        data_collator=VisionDPODataCollator(
+            pad_token_id=processor.tokenizer.pad_token_id or processor.tokenizer.eos_token_id
+        ),
+    )
+    result = trainer.train()
+    trainer.save_model(str(output_dir))
+    processor.save_pretrained(str(output_dir))
+
+    m = result.metrics
+    state = getattr(trainer, "state", None)
+    log_history = getattr(state, "log_history", []) if state else []
+    last_log = log_history[-1] if log_history else {}
+    rc = last_log.get("rewards/chosen", 0.0)
+    rr = last_log.get("rewards/rejected", 0.0)
+    return {
+        "train_loss": m.get("train_loss", 0.0),
+        "calibration_improvement": float(rc - rr),
+        "rewards_chosen": rc,
+        "rewards_rejected": rr,
+    }
+
+
+def _run_dpo_trainer(dataset: Any, output_dir: Path) -> dict[str, float]:
+    """Run TRL DPOTrainer and compute calibration metric."""
+    use_unsloth = os.environ.get("DPO_USE_UNSLOTH", "1").lower() not in ("0", "false")
+    if not use_unsloth:
+        logger.info("DPO_USE_UNSLOTH=0: using standard Transformers path (avoids RecursionError on Colab)")
+        return _run_dpo_trainer_standard(dataset, output_dir)
+
+    import torch
+    import unsloth  # noqa: F401 - must be before FastVisionModel
+    from unsloth import FastVisionModel
+    from trl import DPOTrainer, DPOConfig
+
+    from config import dpo_cfg
+
+    if not torch.cuda.is_available():
+        raise RuntimeError("DPO training requires CUDA")
+
+    model, processor = FastVisionModel.from_pretrained(
+        model_name=dpo_cfg.base_model,
+        max_seq_length=dpo_cfg.max_seq_length,
+        load_in_4bit=dpo_cfg.load_in_4bit,
+        dtype=None,
+    )
+    
+    # Bypass UnslothZoo's overzealous data collator replacement for Vision DPO
+    if not hasattr(processor, "pad"):
+        processor.pad = processor.tokenizer.pad
+
+    model = FastVisionModel.get_peft_model(
+        model,
+        r=dpo_cfg.lora_r,
+        lora_alpha=dpo_cfg.lora_alpha,
+        lora_dropout=dpo_cfg.lora_dropout,
+        target_modules="all-linear",
+        use_gradient_checkpointing="unsloth",
+        random_state=dpo_cfg.seed,
+    )
+    FastVisionModel.for_training(model)
+
+    # Monkey-patch DPOTrainer.process_row so it preserves image_grid_thw and pixel_values
+    # TRL 0.24 incorrectly assumes pixel_values has a batch dimension (like Llava [1, C, H, W])
+    # and does [0], which destroys Qwen2.5-VL's [num_patches, channels] tensor.
+    DPOTrainer.process_row = staticmethod(_patched_process_row)
+
+    # Wrap model.forward to accept 'image_sizes' from TRL and pass it as 'image_grid_thw' to Qwen
+    original_forward = model.forward
+    def dpo_vision_forward(*f_args, **f_kwargs):
+        if "image_sizes" in f_kwargs and "image_grid_thw" not in f_kwargs:
+            f_kwargs["image_grid_thw"] = f_kwargs.pop("image_sizes")
+        return original_forward(*f_args, **f_kwargs)
+    model.forward = dpo_vision_forward
+
+    # Force disable multiprocessing in datasets.map to avoid Colab OOM and dying subprocesses
+    from datasets import Dataset
+    original_map = Dataset.map
+    def no_mp_map(self, *m_args, **m_kwargs):
+        m_kwargs.pop("num_proc", None)
+        return original_map(self, *m_args, **m_kwargs)
+    Dataset.map = no_mp_map
+
+    args = DPOConfig(
+        output_dir=str(output_dir),
+        num_train_epochs=dpo_cfg.num_train_epochs,
+        per_device_train_batch_size=dpo_cfg.per_device_train_batch_size,
+        gradient_accumulation_steps=dpo_cfg.gradient_accumulation_steps,
+        learning_rate=dpo_cfg.learning_rate,
+        beta=dpo_cfg.beta,
+        max_prompt_length=dpo_cfg.max_prompt_length,
+        max_length=dpo_cfg.max_length,
+        seed=dpo_cfg.seed,
+        fp16=not torch.cuda.is_bf16_supported(),
+        bf16=torch.cuda.is_bf16_supported(),
+        logging_steps=1,
+        save_steps=50,
+        save_total_limit=2,
+        remove_unused_columns=False,
+        # Required to run sequentially. If set to 1, TRL uses multiprocessing which OOMs on T4 Colab GPUs.
+        dataset_num_proc=None,
+        # CRITICAL: Disable torch.compile to avoid RecursionError with bitsandbytes + Unsloth AOT on Colab T4.
+        # See: https://github.com/unslothai/unsloth/issues/1921, #1925
+        torch_compile=False,
     )
 
     # For Unsloth/TRL compatibility with Vision DPO
-    # Passing None to data_collator lets DPOTrainer use its default DataCollatorForPreference
+    # Pass our custom collator to prevent UnslothZoo from replacing it with DataCollatorForLanguageModeling
     trainer = DPOTrainer(
         model=model,
         args=args,
         train_dataset=dataset,
         processing_class=processor,
+        data_collator=VisionDPODataCollator(pad_token_id=processor.tokenizer.pad_token_id or processor.tokenizer.eos_token_id),
     )
 
     result = trainer.train()

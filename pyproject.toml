@@ -45,6 +45,17 @@ train = [
     "peft>=0.13.0",
     "unsloth>=2024.8",
 ]
+# DPO on Colab without Unsloth (avoids torchao/torch 2.5 conflicts, RecursionError)
+# Pin transformers<5 to avoid torchao dependency (incompatible with Colab torch 2.5)
+dpo-colab = [
+    "torch>=2.2.0",
+    "transformers>=4.45.0,<5.0",
+    "trl>=0.12.0",
+    "datasets>=3.0.0",
+    "accelerate>=0.34.0",
+    "bitsandbytes>=0.44.0",
+    "peft>=0.13.0",
+]
 test = [
     "pytest>=8.0.0",
     "pytest-asyncio>=0.24.0",
