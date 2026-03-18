@@ -470,11 +470,13 @@ def _run_dpo_trainer_standard(dataset: Any, output_dir: Path) -> dict[str, float
         _dpo_kwargs["max_prompt_length"] = dpo_cfg.max_prompt_length
     args = DPOConfig(**_dpo_kwargs)
 
+    import inspect as _insp
+    _pc_key = "processing_class" if "processing_class" in _insp.signature(TRL_DPOTrainer.__init__).parameters else "tokenizer"
     trainer = TRL_DPOTrainer(
         model=model,
         args=args,
         train_dataset=dataset,
-        processing_class=processor,
+        **{_pc_key: processor},
         data_collator=_make_vision_dpo_collator(
             pad_token_id=processor.tokenizer.pad_token_id or processor.tokenizer.eos_token_id
         ),
@@ -588,11 +590,13 @@ def _run_dpo_trainer(dataset: Any, output_dir: Path) -> dict[str, float]:
 
     # For Unsloth/TRL compatibility with Vision DPO
     # Pass our custom collator to prevent UnslothZoo from replacing it with DataCollatorForLanguageModeling
+    import inspect as _insp
+    _pc_key = "processing_class" if "processing_class" in _insp.signature(DPOTrainer.__init__).parameters else "tokenizer"
     trainer = DPOTrainer(
         model=model,
         args=args,
         train_dataset=dataset,
-        processing_class=processor,
+        **{_pc_key: processor},
         data_collator=_make_vision_dpo_collator(pad_token_id=processor.tokenizer.pad_token_id or processor.tokenizer.eos_token_id),
     )
 
