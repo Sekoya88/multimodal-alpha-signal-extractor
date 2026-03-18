@@ -78,7 +78,7 @@ class DPOConfig:
 
     base_model: str = "unsloth/Qwen2.5-VL-3B-Instruct"
     sft_adapter_path: Path | None = None  # Optional: load SFT LoRA before DPO
-    max_seq_length: int = 2048
+    max_seq_length: int = 1024       # Reduced for Colab T4 OOM
     load_in_4bit: bool = True
     # LoRA (same as SFT)
     lora_r: int = 16
@@ -94,8 +94,8 @@ class DPOConfig:
     gradient_accumulation_steps: int = 4
     learning_rate: float = 5e-5
     beta: float = 0.1  # DPO beta
-    max_prompt_length: int = 1024
-    max_length: int = 2048
+    max_prompt_length: int = 512     # Reduced for Colab
+    max_length: int = 1024           # Reduced for Colab
     seed: int = 42
     output_dir: Path = MODELS_DIR / "dpo-adapter"
     # Paths
