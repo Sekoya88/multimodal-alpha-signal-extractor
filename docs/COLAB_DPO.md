@@ -1,80 +1,120 @@
 # DPO Alignment sur Google Colab — Procédure reproductible
 
-Cette procédure évite les conflits torchao/torch, Unsloth RecursionError et les erreurs d'import.
-
-## Prérequis
-
-- **Runtime** : Colab avec GPU T4 (gratuit) ou A100 (Colab Pro)
-- **Runtime** : Disconnect + Delete runtime avant de commencer (environnement propre)
+Runtime : GPU T4 (gratuit). À chaque nouvelle session, exécuter les cellules dans l'ordre.
 
 ---
 
-## Procédure en 4 cellules
-
-### Cellule 1 — Clone et setup SANS Unsloth (chemin stable)
+## Cellule 1 — Reset + clone propre
 
 ```python
-# Clone
-!rm -rf multimodal-alpha-signal-extractor 2>/dev/null
-!git clone -b feature/dpo-grpo-extensions https://github.com/Sekoya88/multimodal-alpha-signal-extractor.git
-%cd multimodal-alpha-signal-extractor
+import os
+os.chdir("/content")
 
-# Désinstaller torchao AVANT tout (incompatible torch 2.5 Colab gratuit)
-!pip uninstall torchao -y 2>/dev/null || true
+!rm -rf /content/multimodal-alpha-signal-extractor
+!git clone -b feature/dpo-grpo-extensions \
+    https://github.com/Sekoya88/multimodal-alpha-signal-extractor \
+    /content/multimodal-alpha-signal-extractor
 
-# Install DPO deps SANS unsloth (évite RecursionError + torch.int1)
-!pip install -e ".[dpo-colab]" -q
-
-# Si torch 2.5 : garder transformers/trl fournis par dpo-colab
-# Si erreur MODEL_FOR_VISION_2_SEQ : le shim dans dpo_alignment_service patche auto
+!ls /content/multimodal-alpha-signal-extractor/04_dpo_alignment.py
 ```
 
-### Cellule 2 — Générer les données (si pas déjà fait)
+## Cellule 2 — Install dépendances
 
 ```python
-!python 01_generate_dataset.py
+!pip install -e "/content/multimodal-alpha-signal-extractor" -q
+!pip install trl transformers peft bitsandbytes accelerate wandb -q
 ```
 
-### Cellule 3 — Builder les pairs DPO (1ère fois uniquement)
+## Cellule 3 — Patch config.py
 
 ```python
-!PYTHONPATH=src python 04_dpo_alignment.py --max-samples 50
-# (Sans --skip-pairs pour générer dpo_pairs.jsonl)
+config_path = "/content/multimodal-alpha-signal-extractor/config.py"
+with open(config_path, "r") as f:
+    content = f.read()
+
+bad_block = """# ============================================================================
+# Singleton instances (import directly)
+# ============================================================================
+dataset_cfg = DatasetConfig()
+training_cfg = TrainingConfig()
+dpo_cfg = DPOConfig()
+reward_model_cfg = RewardModelConfig()
+grpo_cfg = GRPOConfig()
+temporal_cfg = TemporalConfig()
+benchmark_cfg = BenchmarkConfig()
+vllm_cfg = VLLMConfig()
+pipeline_cfg = PipelineConfig()"""
+
+if content.count(bad_block) == 1:
+    content = content.replace(bad_block, "")
+    content = content.rstrip() + "\n\n" + bad_block + "\n"
+    with open(config_path, "w") as f:
+        f.write(content)
+    print("✓ config.py patché")
+else:
+    print("✓ config.py déjà bon")
 ```
 
-### Cellule 4 — Patch du format image + entraînement
+## Cellule 4 — Mount Drive + symlink models (survie aux crashes)
 
 ```python
-# Patch prompt pour insert <|image_pad|>
-import json
-path = "/content/multimodal-alpha-signal-extractor/dataset/dpo_pairs.jsonl"
-with open(path, "r", encoding="utf-8") as f:
-    items = [json.loads(line) for line in f if line.strip()]
-for item in items:
-    msg = item["prompt"][-1]
-    if isinstance(msg.get("content"), str):
-        msg["content"] = [{"type": "image"}, {"type": "text", "text": msg["content"]}]
-with open(path, "w", encoding="utf-8") as f:
-    for item in items:
-        f.write(json.dumps(item, ensure_ascii=False) + "\n")
-print("✅ Patch done")
+from google.colab import drive
+drive.mount('/content/drive')
 
-# Lancer DPO
-!cd /content/multimodal-alpha-signal-extractor && DPO_USE_UNSLOTH=0 PYTHONPATH=src python 04_dpo_alignment.py --max-samples 50 --skip-pairs
+import os, shutil
+models_src = "/content/multimodal-alpha-signal-extractor/models"
+models_dst = "/content/drive/MyDrive/alpha-signal/models"
+
+os.makedirs(models_dst, exist_ok=True)
+if os.path.exists(models_src) and not os.path.islink(models_src):
+    shutil.rmtree(models_src)
+if not os.path.islink(models_src):
+    os.symlink(models_dst, models_src)
+print("✓ models/ → Drive")
 ```
 
----
-
-## Si Colab a torch 2.10 (Pro / runtime récent)
-
-Avec torch 2.10, tu peux utiliser Unsloth :
+## Cellule 5 — WandB login
 
 ```python
-!pip install ".[train]" -q
-!DPO_USE_UNSLOTH=1 PYTHONPATH=src python 04_dpo_alignment.py --max-samples 50 --skip-pairs
+import wandb
+wandb.login()
 ```
 
-(Après le patch du dataset en Cellule 4.)
+## Cellule 6 — Génère le dataset (si pas déjà sur Drive)
+
+```python
+import os, shutil
+
+dataset_drive = "/content/drive/MyDrive/alpha-signal/dataset"
+dataset_local = "/content/multimodal-alpha-signal-extractor/dataset"
+
+os.makedirs(dataset_drive, exist_ok=True)
+if os.path.exists(dataset_local) and not os.path.islink(dataset_local):
+    shutil.rmtree(dataset_local)
+if not os.path.islink(dataset_local):
+    os.symlink(dataset_drive, dataset_local)
+
+if os.path.exists(f"{dataset_drive}/training_data.jsonl"):
+    print("✓ Dataset chargé depuis Drive")
+else:
+    print("Génération du dataset...")
+    !python /content/multimodal-alpha-signal-extractor/01_generate_dataset.py
+```
+
+## Cellule 7 — Lance le DPO
+
+```python
+import os
+os.environ["WANDB_PROJECT"] = "alpha-signal-dpo"
+
+!cd /content/multimodal-alpha-signal-extractor && \
+  DPO_USE_UNSLOTH=0 \
+  DPO_REPORT_TO=wandb \
+  python 04_dpo_alignment.py
+```
+
+Les checkpoints sont sauvegardés toutes les 5 steps dans Drive (`alpha-signal/models/dpo-adapter/`).
+Si la session crash, relancer la Cellule 7 : l'entraînement reprend automatiquement.
 
 ---
 
@@ -82,7 +122,9 @@ Avec torch 2.10, tu peux utiliser Unsloth :
 
 | Erreur | Action |
 |--------|--------|
-| `torch.int1` | `!pip uninstall torchao -y` |
-| `MODEL_FOR_VISION_2_SEQ_MAPPING_NAMES` | `!pip install "transformers>=4.45" "trl>=0.11,<0.13" -q` |
+| `getcwd: cannot access parent directories` | Ajouter `import os; os.chdir("/content")` avant le clone |
+| `NameError: RewardModelConfig` | Exécuter la Cellule 3 (patch config.py) |
+| `ModuleNotFoundError: trl` | Exécuter la Cellule 2 |
 | `RecursionError` | Utiliser `DPO_USE_UNSLOTH=0` |
-| `tokens: 0, features: 1820` | Exécuter le patch (Cellule 4) avant `--skip-pairs` |
+| `tokens: X, features: Y` | Déjà corrigé : `max_pixels=512*28*28` dans le processor |
+| `divergent branches` | Utiliser `rm -rf` + clone (Cellule 1) |
