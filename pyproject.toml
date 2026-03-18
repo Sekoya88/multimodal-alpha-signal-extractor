@@ -43,6 +43,7 @@ train = [
     "accelerate>=0.34.0",
     "bitsandbytes>=0.44.0",
     "peft>=0.13.0",
+    "unsloth>=2024.8",
 ]
 test = [
     "pytest>=8.0.0",

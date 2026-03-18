@@ -73,6 +73,37 @@ class TrainingConfig:
 
 
 @dataclass(frozen=True)
+class DPOConfig:
+    """Configuration for DPO alignment (Sprint 1)."""
+
+    base_model: str = "unsloth/Qwen2.5-VL-3B-Instruct"
+    sft_adapter_path: Path | None = None  # Optional: load SFT LoRA before DPO
+    max_seq_length: int = 2048
+    load_in_4bit: bool = True
+    # LoRA (same as SFT)
+    lora_r: int = 16
+    lora_alpha: int = 16
+    lora_dropout: float = 0.0
+    target_modules: tuple[str, ...] = (
+        "q_proj", "k_proj", "v_proj", "o_proj",
+        "gate_proj", "up_proj", "down_proj",
+    )
+    # DPO
+    num_train_epochs: int = 2
+    per_device_train_batch_size: int = 1
+    gradient_accumulation_steps: int = 4
+    learning_rate: float = 5e-5
+    beta: float = 0.1  # DPO beta
+    max_prompt_length: int = 1024
+    max_length: int = 2048
+    seed: int = 42
+    output_dir: Path = MODELS_DIR / "dpo-adapter"
+    # Paths
+    dataset_path: Path = DATASET_DIR / "training_data.jsonl"
+    dpo_pairs_path: Path = DATASET_DIR / "dpo_pairs.jsonl"
+
+
+@dataclass(frozen=True)
 class VLLMConfig:
     """Configuration for the vLLM inference server (Step 3)."""
 
@@ -146,5 +177,6 @@ class PipelineConfig:
 # ============================================================================
 dataset_cfg = DatasetConfig()
 training_cfg = TrainingConfig()
+dpo_cfg = DPOConfig()
 vllm_cfg = VLLMConfig()
 pipeline_cfg = PipelineConfig()
