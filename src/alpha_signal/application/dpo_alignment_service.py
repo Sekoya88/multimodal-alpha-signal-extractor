@@ -385,6 +385,7 @@ def _run_dpo_trainer_standard(dataset: Any, output_dir: Path) -> dict[str, float
     import torch
     from transformers import AutoProcessor, Qwen2_5_VLForConditionalGeneration, BitsAndBytesConfig
     from peft import LoraConfig, get_peft_model, prepare_model_for_kbit_training
+    _ensure_trl_vision_shim()
     from trl import DPOTrainer, DPOConfig
 
     from config import dpo_cfg
@@ -417,6 +418,7 @@ def _run_dpo_trainer_standard(dataset: Any, output_dir: Path) -> dict[str, float
     if not hasattr(processor, "pad"):
         processor.pad = processor.tokenizer.pad
 
+    _ensure_trl_vision_shim()
     from trl import DPOTrainer as TRL_DPOTrainer
     TRL_DPOTrainer.process_row = staticmethod(_patched_process_row)
     original_forward = model.forward
@@ -502,6 +504,7 @@ def _run_dpo_trainer(dataset: Any, output_dir: Path) -> dict[str, float]:
     import torch
     import unsloth  # noqa: F401 - must be before FastVisionModel
     from unsloth import FastVisionModel
+    _ensure_trl_vision_shim()
     from trl import DPOTrainer, DPOConfig
 
     from config import dpo_cfg
