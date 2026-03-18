@@ -46,9 +46,8 @@ class DPOAlignmentService(DPOAlignmentPort):
             for line in f:
                 if line.strip():
                     samples.append(json.loads(line))
-
-        if max_samples:
-            samples = samples[:max_samples]
+                    if max_samples and len(samples) >= max_samples:
+                        break
 
         pairs: list[dict[str, Any]] = []
         model.eval()

@@ -164,10 +164,14 @@ class GRPOTrainingService(GRPOTrainingPort):
             load_in_4bit=grpo_cfg.load_in_4bit,
             dtype=None,
         )
-        processor = AutoProcessor.from_pretrained("Qwen/Qwen2.5-VL-3B-Instruct")
+        processor = AutoProcessor.from_pretrained(
+            "Qwen/Qwen2.5-VL-3B-Instruct",
+            min_pixels=256*28*28,
+            max_pixels=512*28*28,
+        )
         FastVisionModel.for_inference(model)
         device = "cuda"
-        model = model.to(device)
+        # Do not manually call model.to(device) on a 4-bit unsloth model
 
         image = Image.open(image_path).convert("RGB")
         predictions = []
@@ -296,9 +300,13 @@ class GRPOTrainingService(GRPOTrainingPort):
             use_gradient_checkpointing="unsloth",
             random_state=grpo_cfg.seed,
         )
-        processor = AutoProcessor.from_pretrained("Qwen/Qwen2.5-VL-3B-Instruct")
+        processor = AutoProcessor.from_pretrained(
+            "Qwen/Qwen2.5-VL-3B-Instruct",
+            min_pixels=256*28*28,
+            max_pixels=512*28*28,
+        )
         device = "cuda"
-        model = model.to(device)
+        # Do not manually call model.to(device) on a 4-bit unsloth model
 
         optimizer = torch.optim.AdamW(
             [p for p in model.parameters() if p.requires_grad],

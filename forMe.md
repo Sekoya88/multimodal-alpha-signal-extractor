@@ -1,58 +1,115 @@
-# ⚡ Multimodal Alpha-Signal Extractor
+# ⚡ Multimodal Alpha-Signal Extractor — forMe (Interview Prep)
 
-Ce projet est une plateforme de trading quantitatif de nouvelle génération qui fusionne l'**analyse technique visuelle** (via un Vision-Language Model fine-tuné) et l'**analyse de sentiment macro-économique** (via NLP) pour générer des signaux de trading structurés.
-
-## 🏗️ Architecture (Clean Architecture & DDD)
-
-La codebase a été restructurée pour suivre les principes du **Domain-Driven Design (DDD)** et de la **Clean Architecture (Architecture Hexagonale)**. Cela garantit une séparation stricte entre la logique métier pure et les dépendances externes (APIs, modèles LLM, UI).
-
-### 1. Le Cœur Métier (`domain/`)
-C'est le sanctuaire du projet. Il ne dépend de *rien d'autre*.
-*   **`models.py`** : Définit les *Entities* et *Value Objects* en utilisant Pydantic. Les modèles comme `TradingSignal`, `SentimentResult`, et `TradingDecision` garantissent que la donnée est toujours valide et typée avant de circuler dans le système.
-*   **`indicators.py`** : Contient les mathématiques pures (RSI, Bandes de Bollinger). Aucune notion de source de données n'existe ici.
-*   **`services.py`** : Le `SignalMergerService` contient la logique métier complexe : "Que fait-on si le modèle visuel dit BUY mais que le sentiment NLP dit SELL ?".
-
-### 2. L'Orchestration (`application/`)
-C'est ici que les cas d'usage (Use Cases) sont définis.
-*   **`ports.py`** : Définit des *Interfaces (Abstractions)*. Le Use Case dit "J'ai besoin d'un port pour récupérer des news (`NewsPort`) et d'un port pour lire une image (`VlmPort`)", mais il ne sait pas (et ne s'en soucie pas) de *comment* c'est implémenté (Ollama, vLLM, Yahoo...).
-*   **`usecases.py`** : Le `AnalyzeMarketUseCase` orchestre le flux. Il récupère les données, génère l'image du graphique, puis lance **simultanément** (asynchrone) l'analyse visuelle et l'analyse de sentiment, avant de passer les résultats au `domain` pour la décision finale.
-
-### 3. L'Infrastructure (`infrastructure/`)
-C'est ici qu'on interagit avec le monde réel.
-*   **`adapters/`** : C'est le code "sale" qui implémente les ports définis plus haut.
-    *   `yfinance_adapter.py` : Se connecte à Yahoo Finance pour la data et les news.
-    *   `mplfinance_adapter.py` : Transforme la data en image PNG.
-    *   `llm_adapters.py` : Communique avec les modèles d'IA. Il gère les spécificités de `Ollama`, `vLLM` et surtout `Llama.cpp` (qui exécute notre modèle VLM fine-tuné). *Note : l'appel à llama.cpp étant synchrone par nature, il est encapsulé dans un `run_in_executor` pour ne pas bloquer l'Event Loop asynchrone du Use Case.*
-*   **`logger.py`** : Système de log robuste (`loguru`), capable de cracher du JSON pour de la production (Datadog/ELK) ou des logs colorés pour le dev.
-
-### 4. La Présentation (`presentation/`)
-Les points d'entrée de l'application.
-*   **`cli.py`** : L'interface en ligne de commande.
-*   **`di_container.py`** : L'injecteur de dépendances. C'est lui qui lit le fichier `config.py` et qui branche les bons "Adapters" (ex: LlamaCpp) dans le "Use Case", avant de donner le Use Case prêt à l'emploi au CLI ou à Streamlit.
-*   **`app/streamlit_app.py`** : Le dashboard interactif.
+> **One-liner** : Plateforme quant de nouvelle génération fusionnant un **VLM fine-tuné (Qwen2.5-VL-3B)** pour l'analyse visuelle graphique + un **LLM sentiment** (LLaMA 3) sur les actualités macro, avec un pipeline d'alignement RLHF complet (SFT → DPO → GRPO).
+>
+> **Notes détaillées** → `obsidian/AI-Vision/`
 
 ---
 
-## 🤖 Le Modèle VLM Fine-Tuné
+## 🏗️ Architecture — Clean Architecture & DDD
 
-Contrairement aux approches classiques qui donnent des séries temporelles (chiffres) à un modèle, nous donnons une **image d'un graphique en chandeliers** (avec RSI et Bollinger) à un modèle de vision (VLM).
+La codebase suit le **Domain-Driven Design** et la **Clean Architecture (Hexagonale)**.
 
-1.  **Génération du Dataset (`01_generate_dataset.py`)** : Le script crée des milliers d'images de graphiques boursiers passés, et les annote automatiquement (BUY/SELL/HOLD) en fonction de ce qui s'est réellement passé dans les jours suivants.
-2.  **Fine-Tuning (`02_finetune...`)** : Nous utilisons **Unsloth (QLoRA)** pour fine-tuner un modèle *Qwen2.5-VL-3B*. Le modèle apprend à "voir" les patterns graphiques (ex: rebond sur une bande de Bollinger inférieure avec un RSI survendu).
-3.  **Inférence (`Llama.cpp Adapter`)** : Le modèle fine-tuné est exporté au format GGUF. Plutôt que de dépendre d'un serveur lourd, le dashboard charge ce modèle GGUF directement via `llama.cpp`. L'UI force donc ce choix par défaut.
+### Couches
+
+- **`domain/`** : Zéro dépendance externe. Contient les modèles Pydantic (`TradingSignal`, `SentimentResult`, `TradingDecision`), les calculs purs d'indicateurs (RSI, Bollinger, MACD), et le `SignalMergerService`.
+- **`application/`** : Ports (interfaces ABC) + Use Cases. `AnalyzeMarketUseCase` lance **en parallèle async** (`asyncio.gather`) l'analyse VLM et le sentiment NLP.
+- **`infrastructure/`** : Adapters concrets — `YFinanceAdapter`, `MplfinanceAdapter`, `LlamaCppAdapter`, `InferenceCacheAdapter` (Redis).
+- **`presentation/`** : DI Container, CLI Typer, Streamlit Dashboard.
+
+### Règle de Fusion des Signaux (`SignalMergerService`)
+
+```
+VLM dit BUY + NLP dit BULLISH  → confidence = VLM*0.7 + sentiment_intensity*0.3
+VLM dit BUY + NLP dit BEARISH  → confidence = VLM*0.5 (réduction — conflit)
+VLM dit HOLD                   → HOLD toujours, confidence = VLM*0.8
+```
 
 ---
 
-## 🚀 Flux d'exécution (Information Flow)
+## 🤖 Pipeline de Fine-Tuning (5 Sprints)
 
-Quand vous cliquez sur "RUN ANALYSIS" dans le dashboard :
+### Sprint 0 — Génération Dataset Auto-Annoté (`01_generate_dataset.py`)
 
-1.  Le `di_container` construit le pipeline.
-2.  Le `YFinanceAdapter` récupère les prix et les news.
-3.  Le Dashboard affiche les news (cliquables vers Yahoo Finance).
-4.  Le `MplfinanceAdapter` dessine le graphique "en mémoire" et le sauvegarde.
-5.  **Parallélisme** :
-    *   Le `LlamaCppVlmAdapter` (notre Qwen fine-tuné) regarde l'image et donne son analyse technique.
-    *   Le `OllamaSentimentAdapter` (LLaMA 3 local) lit les news et donne le sentiment macro.
-6.  Le `SignalMergerService` (Domain) prend les deux signaux, applique les règles de gestion des risques, et sort la `TradingDecision` finale.
-7.  Le Dashboard affiche la matrice d'exécution.
+- Fenêtres glissantes 60 jours (`stride=5`) sur données OHLCV yFinance
+- Oracle mathématique : `forward_return_5j > 0.5% → BUY`, `< -0.5% → SELL`, sinon `HOLD`
+- Graphiques candlestick (mplfinance) avec RSI + Bollinger → encodés en base64 dans un JSONL
+- Format : messages multimodaux compatible Qwen chat template (image + texte dans le même JSON)
+
+### Sprint 1 — SFT (Supervised Fine-Tuning) QLoRA (`02_finetune_colab.py`)
+
+- **Unsloth FastVisionModel** : 2× plus rapide grâce à Flash Attention 2 + memory efficient cross-attention
+- **BitsAndBytes NF4 4-bit** : modèle 3B → ~3 Go VRAM (vs 12 Go en bf16)
+- **QLoRA r=16, alpha=16** : seulement ~2-5% des paramètres entraînés (matrices B×A de bas rang greffées sur chaque couche linéaire)
+- **Gradient Checkpointing** : recalcule les activations en backward au lieu de les stocker → -30% VRAM
+- Export **GGUF Q4_K_M** pour llama.cpp sur Apple Silicon
+
+### Sprint 2 — DPO Alignment (`04_dpo_alignment.py`)
+
+- **Direct Preference Optimization** : paires `(chosen oracle, rejected prediction)` sans RM externe
+- Génère les paires : model inference → compare à oracle → si faux = rejected, si juste = chosen + synthétique faux
+- Loss DPO : `σ(β * (log π(y_w|x)/π_ref - log π(y_l|x)/π_ref))` avec `β=0.1`
+- **Piège** : ne jamais appeler `.to(device)` sur un modèle BNB 4-bit → OOM killer silencieux
+
+### Sprint 3 — Reward Model Visuel (`05_reward_model.py`)
+
+- Backbone Qwen2.5-VL **gelé** + tête MLP-2-couches entraînable → score `[0,1]`
+- Training data : oracle correct → reward 1.0, oracle flippé → reward 0.0 (50/50 balancé)
+- Pluggé comme **6ème nœud** dans le pipeline après le `SignalMergerService`
+
+### Sprint 4 — GRPO (`06_grpo_training.py`)
+
+- **Group Relative Policy Optimization** (DeepSeek) — pas de RM, pas de paires
+- Génère N=8 prédictions par graphique avec `temperature=0.7` → diversité intra-groupe
+- Récompense composite : `r = 0.6*directional_accuracy + 0.4*calibration`
+- Normalisation intra-groupe → avantage relatif → PPO clipping `ε=0.2`
+- **Learning rate très petit** : `1e-5` (modèle déjà aligné par DPO)
+
+### Sprint 5 — Extension Temporelle Multi-Frame (`07_temporal_extension.py`)
+
+- N=8 graphiques consécutifs de 60 jours (`stride=5`) passés en multi-image dans un seul prompt
+- Coverage : `60 + 7×5 = 95 jours` (+58% de contexte)
+- **Positional Embeddings temporels appris** pour que le modèle connaisse l'ordre des frames
+- Context window montée à `max_seq_length=4096` pour absorber tous les tokens visuels
+
+### Sprint 6 — Production vLLM + Cache Redis (`08_inference_benchmark.py`)
+
+- **vLLM** : PagedAttention + Continuous Batching → 64 requêtes simultanées
+- **Speculative Decoding** : Qwen 0.5B brouillon → Qwen 3B verifier → gain 2-3× latence
+- **Redis TTL 1h** : hash MD5(image+prompt) → cache hit en < 5ms vs ~400ms inference
+- **Benchmark async** : `asyncio.gather` → mesure p50/p95/p99 à 1/4/16/32 utilisateurs concurrents
+
+---
+
+## 🛠️ Multi-Backend Inférence (`PipelineConfig`)
+
+```
+vlm_provider = "llama_cpp"  → Apple Silicon M4 (Metal GPU, GGUF)
+vlm_provider = "vllm"       → NVIDIA CUDA (A100, T4...)
+vlm_provider = "ollama"     → Développement rapide (llama3.2-vision)
+```
+
+Le changement de backend ne nécessite **aucune modification de code métier** — seul `config.py` change.
+
+---
+
+## � Bugs & Debugging Mémorisés
+
+| Symptôme | Cause | Fix |
+|---------|-------|-----|
+| Script Colab ✅ après 1 min mais sans output | OOM Killer Linux tue le process silencieusement | Supprimer `.to(device)` sur BNB 4-bit |
+| `CUDA required` après reset Colab | GPU désactivé par défaut au reset | Runtime → Change Runtime Type → T4 |
+| `zip error: Nothing to do` | `models/dpo-adapter` non créé (crash avant) | Regarder les logs : crash pendant training |
+| `zip warning: name not matched` | Path relatif dans `!zip` depuis Colab | Utiliser path absolu `/content/` |
+| Images trop grandes → OOM | AutoProcessor sans borne de pixels | `max_pixels=512*28*28` |
+
+---
+
+## 🔑 Mots-Clés par Domaine
+
+**Architecture** : Clean Architecture, DDD, Hexagonale, Ports & Adapters, DI Container, asyncio.gather  
+**VLM** : ViT patches 28×28, AutoProcessor, apply_chat_template, multi-image, positional embeddings  
+**Fine-Tuning** : QLoRA, NF4, Gradient Checkpointing, Flash Attention 2, LoRA r=16  
+**Alignement** : DPO β=0.1, GRPO group_size=8, PPO ε=0.2, calibration reward  
+**Production** : vLLM, PagedAttention, Speculative Decoding γ=4, Redis TTL, p95 latency  
+**Finance** : Forward Return Oracle, Directional Accuracy, Calibration, Bollinger, RSI, MACD  

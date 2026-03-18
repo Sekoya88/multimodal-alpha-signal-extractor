@@ -37,7 +37,7 @@ class TemporalPositionEmbedding(nn.Module):
     enabling the model to reason about temporal ordering of chart frames.
     """
 
-    def __init__(self, max_frames: int = 16, embedding_dim: int = 64):
+    def __init__(self, max_frames: int = 120, embedding_dim: int = 64):
         super().__init__()
         self.position_embedding = nn.Embedding(max_frames, embedding_dim)
         self.projection = nn.Linear(embedding_dim, embedding_dim)
@@ -247,7 +247,7 @@ class TemporalSignalExtractor:
     native multi-image support to reason about temporal trends.
     """
 
-    def __init__(self, position_embedding_dim: int = 64, max_frames: int = 16):
+    def __init__(self, position_embedding_dim: int = 64, max_frames: int = 120):
         self.pos_embedding = TemporalPositionEmbedding(
             max_frames=max_frames,
             embedding_dim=position_embedding_dim,
