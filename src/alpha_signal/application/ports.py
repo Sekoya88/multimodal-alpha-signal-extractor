@@ -263,3 +263,63 @@ class GRPOTrainingPort(ABC):
         """
         pass
 
+
+class TemporalSignalPort(ABC):
+    """Port for temporal multi-frame chart analysis."""
+
+    @abstractmethod
+    def generate_temporal_sequence(
+        self,
+        df: "pd.DataFrame",
+        n_frames: int = 8,
+        window_size: int = 60,
+        stride: int = 5,
+    ) -> list[Path]:
+        """Generate a sequence of N consecutive chart images from market data.
+
+        Args:
+            df: Full OHLCV DataFrame with indicators.
+            n_frames: Number of frames to generate.
+            window_size: Trading days per chart.
+            stride: Days between consecutive frames.
+
+        Returns:
+            List of Paths to generated chart images.
+        """
+        pass
+
+    @abstractmethod
+    def analyze_temporal_sequence(
+        self,
+        image_paths: list[Path],
+    ) -> dict[str, Any]:
+        """Analyze a sequence of charts for temporal trend identification.
+
+        Uses Qwen2.5-VL multi-image input to process all frames together.
+
+        Args:
+            image_paths: Ordered list of chart image paths (temporal sequence).
+
+        Returns:
+            Dict with keys: action, confidence, trend, reasoning.
+        """
+        pass
+
+    @abstractmethod
+    def benchmark(
+        self,
+        dataset_path: Path,
+        n_frames: int = 8,
+    ) -> dict[str, float]:
+        """Benchmark single-frame vs N-frame accuracy on a holdout set.
+
+        Args:
+            dataset_path: Path to training_data.jsonl.
+            n_frames: Number of frames for multi-frame analysis.
+
+        Returns:
+            Dict with single_frame_accuracy, multi_frame_accuracy, improvement.
+        """
+        pass
+
+

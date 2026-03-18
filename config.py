@@ -163,6 +163,27 @@ class GRPOConfig:
 
 
 @dataclass(frozen=True)
+class TemporalConfig:
+    """Configuration for Temporal Multi-Frame Extension (Sprint 4)."""
+
+    n_frames: int = 8                   # Number of consecutive windows
+    window_size: int = 60               # Trading days per chart
+    stride: int = 5                     # Days between frames
+    # Position embeddings
+    position_embedding_dim: int = 64    # Learned temporal position embedding dim
+    # Model
+    base_model: str = "unsloth/Qwen2.5-VL-3B-Instruct"
+    max_seq_length: int = 4096          # Larger context for multi-image
+    load_in_4bit: bool = True
+    # Benchmark
+    benchmark_holdout_ratio: float = 0.2
+    seed: int = 42
+    # Paths
+    output_dir: Path = MODELS_DIR / "temporal-extension"
+    benchmark_results_path: Path = DATASET_DIR / "temporal_benchmark.json"
+
+
+@dataclass(frozen=True)
 class VLLMConfig:
     """Configuration for the vLLM inference server (Step 3)."""
 
@@ -239,5 +260,6 @@ training_cfg = TrainingConfig()
 dpo_cfg = DPOConfig()
 reward_model_cfg = RewardModelConfig()
 grpo_cfg = GRPOConfig()
+temporal_cfg = TemporalConfig()
 vllm_cfg = VLLMConfig()
 pipeline_cfg = PipelineConfig()
