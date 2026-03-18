@@ -28,9 +28,8 @@ RUN mkdir -p $OLLAMA_MODELS
 COPY --chown=user:user . .
 
 # 5. Install the project and dependencies
-# We use the pre-built wheels for llama-cpp-python to avoid compiling C++ for 15 minutes and timing out.
-RUN pip install --no-cache-dir llama-cpp-python \
-    --extra-index-url https://abetlen.github.io/llama-cpp-python/whl/cpu
+# We install llama-cpp-python first using the pre-compiled wheel specific to python 3.11 / CPU
+RUN pip install --no-cache-dir llama-cpp-python==0.3.1 --extra-index-url https://abetlen.github.io/llama-cpp-python/whl/cpu
 
 RUN pip install --no-cache-dir build && \
     pip install --no-cache-dir -e .
