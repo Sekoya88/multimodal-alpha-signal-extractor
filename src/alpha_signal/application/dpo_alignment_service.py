@@ -410,14 +410,15 @@ def _run_dpo_trainer_standard(dataset: Any, output_dir: Path) -> dict[str, float
 
     Dataset.map = _no_mp_map
 
-    args = DPOConfig(
+    import inspect as _inspect
+    _dpo_supported = set(_inspect.signature(DPOConfig.__init__).parameters)
+    _dpo_kwargs = dict(
         output_dir=str(output_dir),
         num_train_epochs=dpo_cfg.num_train_epochs,
         per_device_train_batch_size=dpo_cfg.per_device_train_batch_size,
         gradient_accumulation_steps=dpo_cfg.gradient_accumulation_steps,
         learning_rate=dpo_cfg.learning_rate,
         beta=dpo_cfg.beta,
-        max_prompt_length=dpo_cfg.max_prompt_length,
         max_length=dpo_cfg.max_length,
         seed=dpo_cfg.seed,
         fp16=not torch.cuda.is_bf16_supported(),
@@ -430,6 +431,9 @@ def _run_dpo_trainer_standard(dataset: Any, output_dir: Path) -> dict[str, float
         torch_compile=False,
         report_to=os.environ.get("DPO_REPORT_TO", "none"),
     )
+    if "max_prompt_length" in _dpo_supported:
+        _dpo_kwargs["max_prompt_length"] = dpo_cfg.max_prompt_length
+    args = DPOConfig(**_dpo_kwargs)
 
     trainer = TRL_DPOTrainer(
         model=model,
@@ -521,14 +525,15 @@ def _run_dpo_trainer(dataset: Any, output_dir: Path) -> dict[str, float]:
         return original_map(self, *m_args, **m_kwargs)
     Dataset.map = no_mp_map
 
-    args = DPOConfig(
+    import inspect as _inspect
+    _dpo_supported = set(_inspect.signature(DPOConfig.__init__).parameters)
+    _dpo_kwargs = dict(
         output_dir=str(output_dir),
         num_train_epochs=dpo_cfg.num_train_epochs,
         per_device_train_batch_size=dpo_cfg.per_device_train_batch_size,
         gradient_accumulation_steps=dpo_cfg.gradient_accumulation_steps,
         learning_rate=dpo_cfg.learning_rate,
         beta=dpo_cfg.beta,
-        max_prompt_length=dpo_cfg.max_prompt_length,
         max_length=dpo_cfg.max_length,
         seed=dpo_cfg.seed,
         fp16=not torch.cuda.is_bf16_supported(),
@@ -537,13 +542,13 @@ def _run_dpo_trainer(dataset: Any, output_dir: Path) -> dict[str, float]:
         save_steps=5,
         save_total_limit=3,
         remove_unused_columns=False,
-        # Required to run sequentially. If set to 1, TRL uses multiprocessing which OOMs on T4 Colab GPUs.
         dataset_num_proc=None,
-        # CRITICAL: Disable torch.compile to avoid RecursionError with bitsandbytes + Unsloth AOT on Colab T4.
-        # See: https://github.com/unslothai/unsloth/issues/1921, #1925
         torch_compile=False,
         report_to=os.environ.get("DPO_REPORT_TO", "none"),
     )
+    if "max_prompt_length" in _dpo_supported:
+        _dpo_kwargs["max_prompt_length"] = dpo_cfg.max_prompt_length
+    args = DPOConfig(**_dpo_kwargs)
 
     # For Unsloth/TRL compatibility with Vision DPO
     # Pass our custom collator to prevent UnslothZoo from replacing it with DataCollatorForLanguageModeling
