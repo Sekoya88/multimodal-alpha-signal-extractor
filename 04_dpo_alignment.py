@@ -143,6 +143,9 @@ def _dataset_from_pairs_file(pairs_path: Path):
         p = rec["prompt"]
         return {
             "images": imgs,
+            # Keep base64 strings: Arrow-safe, used by _patched_process_row to reliably
+            # re-decode the image regardless of how Arrow/HF-datasets serialises numpy/PIL.
+            "images_b64": rec["images_b64"],
             "prompt": p,
             "prompt_raw": p,  # Preserve raw format; process_row uses it to avoid TRL's wrong placeholder count
             "chosen": rec["chosen"],

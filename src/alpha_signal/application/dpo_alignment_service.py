@@ -286,19 +286,33 @@ def _patched_process_row(
             return [_to_py(x) for x in obj]
         return obj
 
-    # Normalise image to PIL (Arrow may return bytes / numpy / dict{"bytes":...})
+    # Normalise image to PIL.
+    # Prefer images_b64 (base64 string stored in dataset) — Arrow-safe, always reliable.
+    # Fall back to images column (PIL/numpy/bytes, Arrow serialisation may corrupt shape).
     from PIL import Image as _PILImage
     import numpy as _np
     import io as _io
-    raw_img = features["images"][0]
-    if isinstance(raw_img, _PILImage.Image):
-        pil_img = raw_img
-    elif isinstance(raw_img, bytes):
-        pil_img = _PILImage.open(_io.BytesIO(raw_img)).convert("RGB")
-    elif isinstance(raw_img, dict) and "bytes" in raw_img:
-        pil_img = _PILImage.open(_io.BytesIO(raw_img["bytes"])).convert("RGB")
+    import base64 as _b64
+
+    images_b64 = features.get("images_b64")
+    if images_b64:
+        raw_b64 = images_b64[0]
+        if isinstance(raw_b64, bytes):
+            raw_b64 = raw_b64.decode()
+        pil_img = _PILImage.open(_io.BytesIO(_b64.b64decode(raw_b64))).convert("RGB")
     else:
-        pil_img = _PILImage.fromarray(_np.array(raw_img).astype(_np.uint8))
+        raw_img = features["images"][0]
+        if isinstance(raw_img, _PILImage.Image):
+            pil_img = raw_img.convert("RGB")
+        elif isinstance(raw_img, bytes):
+            pil_img = _PILImage.open(_io.BytesIO(raw_img)).convert("RGB")
+        elif isinstance(raw_img, dict) and "bytes" in raw_img:
+            pil_img = _PILImage.open(_io.BytesIO(raw_img["bytes"])).convert("RGB")
+        else:
+            arr = _np.array(raw_img)
+            while arr.ndim > 3:
+                arr = arr[0]
+            pil_img = _PILImage.fromarray(arr.astype(_np.uint8)).convert("RGB")
 
     # Build prompt: prefer prompt_raw (list) so processor expands from actual image — fixes 1786 vs 1820 mismatch
     raw_prompt = _to_py(features.get("prompt_raw") or features["prompt"])
