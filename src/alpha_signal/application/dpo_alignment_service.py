@@ -442,9 +442,8 @@ def _run_dpo_trainer_standard(dataset: Any, output_dir: Path) -> dict[str, float
             **_kw,
         ):
             _p = processing_class or processor or _captured_proc
-            _tok = _p.tokenizer if hasattr(_p, "tokenizer") else _p
             return _patched_process_row(
-                features, _p, _tok,
+                features, _p,
                 max_prompt_length=max_prompt_length,
                 max_completion_length=max_completion_length,
                 add_special_tokens=add_special_tokens,
