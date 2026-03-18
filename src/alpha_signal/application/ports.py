@@ -131,6 +131,53 @@ class DPOAlignmentPort(ABC):
         pass
 
 
+class RewardScorerPort(ABC):
+    """Port for visual reward scoring (frozen VLM backbone + MLP head → [0,1])."""
+
+    @abstractmethod
+    def score(
+        self,
+        image_path: Path,
+        predicted_action: str,
+        predicted_confidence: float,
+    ) -> float:
+        """Score a (chart, prediction) pair. Returns reward in [0, 1].
+
+        Args:
+            image_path: Path to the candlestick chart image.
+            predicted_action: Predicted trading action (BUY/SELL/HOLD).
+            predicted_confidence: Model's confidence in the prediction.
+
+        Returns:
+            Reward score between 0.0 and 1.0.
+        """
+        pass
+
+    @abstractmethod
+    def train(
+        self,
+        data_path: Path,
+    ) -> dict[str, float]:
+        """Train the reward model MLP head on labeled data.
+
+        Args:
+            data_path: Path to reward training data JSONL.
+
+        Returns:
+            Dict with training metrics (loss, accuracy, etc.).
+        """
+        pass
+
+    @abstractmethod
+    def load_weights(self, weights_path: Path) -> None:
+        """Load previously trained MLP head weights.
+
+        Args:
+            weights_path: Path to saved MLP weights file.
+        """
+        pass
+
+
 class SentimentPort(ABC):
     """Port for LLM-based sentiment analysis."""
     
@@ -151,3 +198,128 @@ class SentimentPort(ABC):
     def provider_info(self) -> str:
         """Returns the identifier of the underlying text LLM provider."""
         pass
+
+
+class GRPOTrainingPort(ABC):
+    """Port for GRPO (Group Relative Policy Optimization) training."""
+
+    @abstractmethod
+    def generate_group(
+        self,
+        image_path: Path,
+        prompt: str,
+        n: int = 8,
+        temperature: float = 0.7,
+    ) -> list[dict[str, Any]]:
+        """Generate N diverse predictions for a single chart via temperature sampling.
+
+        Args:
+            image_path: Path to chart image.
+            prompt: User prompt for the VLM.
+            n: Number of predictions to generate.
+            temperature: Sampling temperature for diversity.
+
+        Returns:
+            List of N prediction dicts with keys: action, confidence, full_text.
+        """
+        pass
+
+    @abstractmethod
+    def compute_rewards(
+        self,
+        predictions: list[dict[str, Any]],
+        oracle_action: str,
+        oracle_return: float,
+    ) -> list[float]:
+        """Compute composite rewards for a group of predictions.
+
+        Reward = 0.6 * directional_accuracy + 0.4 * (1 - |conf_error|).
+        Then normalize within group (subtract mean, divide by std).
+
+        Args:
+            predictions: Group of N predictions.
+            oracle_action: Ground truth action from forward return.
+            oracle_return: Actual forward return value.
+
+        Returns:
+            List of N normalized reward values.
+        """
+        pass
+
+    @abstractmethod
+    def train(
+        self,
+        dataset_path: Path,
+        output_dir: Path,
+    ) -> dict[str, float]:
+        """Run the full GRPO training loop.
+
+        Args:
+            dataset_path: Path to training_data.jsonl.
+            output_dir: Where to save the GRPO adapter.
+
+        Returns:
+            Dict with training metrics (avg_reward, loss, etc.).
+        """
+        pass
+
+
+class TemporalSignalPort(ABC):
+    """Port for temporal multi-frame chart analysis."""
+
+    @abstractmethod
+    def generate_temporal_sequence(
+        self,
+        df: "pd.DataFrame",
+        n_frames: int = 8,
+        window_size: int = 60,
+        stride: int = 5,
+    ) -> list[Path]:
+        """Generate a sequence of N consecutive chart images from market data.
+
+        Args:
+            df: Full OHLCV DataFrame with indicators.
+            n_frames: Number of frames to generate.
+            window_size: Trading days per chart.
+            stride: Days between consecutive frames.
+
+        Returns:
+            List of Paths to generated chart images.
+        """
+        pass
+
+    @abstractmethod
+    def analyze_temporal_sequence(
+        self,
+        image_paths: list[Path],
+    ) -> dict[str, Any]:
+        """Analyze a sequence of charts for temporal trend identification.
+
+        Uses Qwen2.5-VL multi-image input to process all frames together.
+
+        Args:
+            image_paths: Ordered list of chart image paths (temporal sequence).
+
+        Returns:
+            Dict with keys: action, confidence, trend, reasoning.
+        """
+        pass
+
+    @abstractmethod
+    def benchmark(
+        self,
+        dataset_path: Path,
+        n_frames: int = 8,
+    ) -> dict[str, float]:
+        """Benchmark single-frame vs N-frame accuracy on a holdout set.
+
+        Args:
+            dataset_path: Path to training_data.jsonl.
+            n_frames: Number of frames for multi-frame analysis.
+
+        Returns:
+            Dict with single_frame_accuracy, multi_frame_accuracy, improvement.
+        """
+        pass
+
+
