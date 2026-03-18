@@ -326,11 +326,16 @@ def _patched_process_row(
         chosen_input_ids = chosen_input_ids[:max_completion_length]
         rejected_input_ids = rejected_input_ids[:max_completion_length]
 
+    # TRL >= 0.13 uses "prompt_ids"/"chosen_ids"/"rejected_ids"
+    # TRL < 0.13 uses "prompt_input_ids"/"chosen_input_ids"/"rejected_input_ids"
+    import trl as _trl
+    from packaging.version import Version as _V
+    _new_trl = _V(_trl.__version__) >= _V("0.13")
     output = {
-        "prompt_input_ids": prompt_input_ids,
+        "prompt_ids" if _new_trl else "prompt_input_ids": prompt_input_ids,
         "pixel_values": pixel_values,
-        "chosen_input_ids": chosen_input_ids,
-        "rejected_input_ids": rejected_input_ids,
+        "chosen_ids" if _new_trl else "chosen_input_ids": chosen_input_ids,
+        "rejected_ids" if _new_trl else "rejected_input_ids": rejected_input_ids,
     }
 
     if "pixel_attention_mask" in processed_features:
