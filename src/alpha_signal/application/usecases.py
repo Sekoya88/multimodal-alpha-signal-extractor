@@ -7,6 +7,7 @@ data fetchers, chart rendering, and LLM inference ports concurrently.
 import asyncio
 from datetime import datetime, timezone
 from pathlib import Path
+from typing import Optional
 
 from loguru import logger
 
@@ -14,6 +15,7 @@ from alpha_signal.application.ports import (
     ChartRendererPort,
     MarketDataPort,
     NewsPort,
+    RewardScorerPort,
     SentimentPort,
     VlmPort,
 )
@@ -31,6 +33,7 @@ class AnalyzeMarketUseCase:
         vlm_port: VlmPort,
         sentiment_port: SentimentPort,
         output_dir: Path,
+        reward_scorer_port: Optional[RewardScorerPort] = None,
     ):
         self._market_data = market_data_port
         self._news = news_port
@@ -38,6 +41,7 @@ class AnalyzeMarketUseCase:
         self._vlm = vlm_port
         self._sentiment = sentiment_port
         self._output_dir = output_dir
+        self._reward_scorer = reward_scorer_port
 
     async def execute(self, ticker: str, days: int = 60) -> TradingDecision:
         """Execute the pipeline end-to-end for a given ticker.
@@ -75,6 +79,30 @@ class AnalyzeMarketUseCase:
             vlm_provider=self._vlm.provider_info,
             sentiment_provider=self._sentiment.provider_info,
         )
+
+        # 5. Optional: Reward scoring (6th pipeline node)
+        if self._reward_scorer is not None:
+            try:
+                reward_score = self._reward_scorer.score(
+                    image_path=chart_path,
+                    predicted_action=decision.final_action.value,
+                    predicted_confidence=decision.final_confidence,
+                )
+                # Adjust confidence using reward model score
+                adjusted_confidence = round(
+                    decision.final_confidence * 0.7 + reward_score * 0.3, 3
+                )
+                decision = decision.model_copy(update={
+                    "final_confidence": min(adjusted_confidence, 0.99),
+                    "meta": {
+                        **decision.meta,
+                        "reward_score": round(reward_score, 4),
+                        "confidence_before_reward": decision.final_confidence,
+                    },
+                })
+                logger.info(f"Reward score: {reward_score:.4f} → adjusted confidence: {decision.final_confidence}")
+            except Exception as e:
+                logger.warning(f"Reward scoring failed (non-blocking): {e}")
         
         logger.info(f"Analysis complete for {ticker}. Final decision: {decision.final_action.value}")
         return decision

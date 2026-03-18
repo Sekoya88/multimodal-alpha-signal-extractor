@@ -131,6 +131,53 @@ class DPOAlignmentPort(ABC):
         pass
 
 
+class RewardScorerPort(ABC):
+    """Port for visual reward scoring (frozen VLM backbone + MLP head → [0,1])."""
+
+    @abstractmethod
+    def score(
+        self,
+        image_path: Path,
+        predicted_action: str,
+        predicted_confidence: float,
+    ) -> float:
+        """Score a (chart, prediction) pair. Returns reward in [0, 1].
+
+        Args:
+            image_path: Path to the candlestick chart image.
+            predicted_action: Predicted trading action (BUY/SELL/HOLD).
+            predicted_confidence: Model's confidence in the prediction.
+
+        Returns:
+            Reward score between 0.0 and 1.0.
+        """
+        pass
+
+    @abstractmethod
+    def train(
+        self,
+        data_path: Path,
+    ) -> dict[str, float]:
+        """Train the reward model MLP head on labeled data.
+
+        Args:
+            data_path: Path to reward training data JSONL.
+
+        Returns:
+            Dict with training metrics (loss, accuracy, etc.).
+        """
+        pass
+
+    @abstractmethod
+    def load_weights(self, weights_path: Path) -> None:
+        """Load previously trained MLP head weights.
+
+        Args:
+            weights_path: Path to saved MLP weights file.
+        """
+        pass
+
+
 class SentimentPort(ABC):
     """Port for LLM-based sentiment analysis."""
     

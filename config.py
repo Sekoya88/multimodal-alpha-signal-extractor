@@ -104,6 +104,29 @@ class DPOConfig:
 
 
 @dataclass(frozen=True)
+class RewardModelConfig:
+    """Configuration for the Visual Reward Model (Sprint 2)."""
+
+    base_model: str = "unsloth/Qwen2.5-VL-3B-Instruct"
+    max_seq_length: int = 2048
+    load_in_4bit: bool = True
+    # MLP head
+    hidden_dim: int = 256          # MLP hidden layer dimension
+    dropout: float = 0.1
+    # Training
+    num_train_epochs: int = 3
+    per_device_train_batch_size: int = 4
+    learning_rate: float = 1e-4
+    weight_decay: float = 0.01
+    seed: int = 42
+    # Reward labeling
+    reward_threshold: float = 0.02  # 2% return → reward 1.0
+    # Paths
+    output_dir: Path = MODELS_DIR / "reward-model"
+    training_data_path: Path = DATASET_DIR / "reward_training_data.jsonl"
+
+
+@dataclass(frozen=True)
 class VLLMConfig:
     """Configuration for the vLLM inference server (Step 3)."""
 
@@ -178,5 +201,6 @@ class PipelineConfig:
 dataset_cfg = DatasetConfig()
 training_cfg = TrainingConfig()
 dpo_cfg = DPOConfig()
+reward_model_cfg = RewardModelConfig()
 vllm_cfg = VLLMConfig()
 pipeline_cfg = PipelineConfig()

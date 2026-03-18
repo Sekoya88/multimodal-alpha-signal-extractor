@@ -6,6 +6,7 @@ Reads from configuration to pick the correct implementation.
 
 import sys
 from pathlib import Path
+from typing import Optional
 
 # Ensure project root is on path when running as installed script
 # di_container.py -> presentation/ -> alpha_signal/ -> src/ -> project_root
@@ -13,7 +14,7 @@ _PROJECT_ROOT = Path(__file__).resolve().parents[3]
 if str(_PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(_PROJECT_ROOT))
 
-from config import pipeline_cfg
+from config import pipeline_cfg, reward_model_cfg
 
 from alpha_signal.application.usecases import AnalyzeMarketUseCase
 from alpha_signal.infrastructure.adapters.llm_adapters import (
@@ -24,6 +25,26 @@ from alpha_signal.infrastructure.adapters.llm_adapters import (
 )
 from alpha_signal.infrastructure.adapters.mplfinance_adapter import MplfinanceAdapter
 from alpha_signal.infrastructure.adapters.yfinance_adapter import YFinanceAdapter
+
+
+def _build_reward_scorer() -> Optional["RewardScorerPort"]:
+    """Try to build the reward scorer if weights are available."""
+    from alpha_signal.application.ports import RewardScorerPort
+
+    weights_path = reward_model_cfg.output_dir / "mlp_head.pt"
+    if not weights_path.exists():
+        return None
+
+    try:
+        from alpha_signal.infrastructure.adapters.reward_scorer_adapter import RewardScorerAdapter
+        adapter = RewardScorerAdapter(
+            hidden_dim=reward_model_cfg.hidden_dim,
+            dropout=reward_model_cfg.dropout,
+        )
+        adapter.load_weights(weights_path)
+        return adapter
+    except Exception:
+        return None
 
 
 def build_analyze_market_usecase(output_dir: Path) -> AnalyzeMarketUseCase:
@@ -74,7 +95,10 @@ def build_analyze_market_usecase(output_dir: Path) -> AnalyzeMarketUseCase:
     else:
         raise ValueError(f"Unknown VLM provider: {pipeline_cfg.vlm_provider}")
 
-    # 4. Inject dependencies into Use Case
+    # 4. Optionally load reward scorer (6th pipeline node)
+    reward_scorer_port = _build_reward_scorer()
+
+    # 5. Inject dependencies into Use Case
     use_case = AnalyzeMarketUseCase(
         market_data_port=market_data_port,
         news_port=news_port,
@@ -82,6 +106,7 @@ def build_analyze_market_usecase(output_dir: Path) -> AnalyzeMarketUseCase:
         vlm_port=vlm_port,
         sentiment_port=sentiment_port,
         output_dir=output_dir,
+        reward_scorer_port=reward_scorer_port,
     )
     
     return use_case
