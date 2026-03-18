@@ -423,12 +423,12 @@ def _run_dpo_trainer_standard(dataset: Any, output_dir: Path) -> dict[str, float
         fp16=not torch.cuda.is_bf16_supported(),
         bf16=torch.cuda.is_bf16_supported(),
         logging_steps=1,
-        save_steps=50,
-        save_total_limit=2,
+        save_steps=5,
+        save_total_limit=3,
         remove_unused_columns=False,
         dataset_num_proc=None,
         torch_compile=False,
-        report_to="none",
+        report_to=os.environ.get("DPO_REPORT_TO", "none"),
     )
 
     trainer = TRL_DPOTrainer(
@@ -440,7 +440,10 @@ def _run_dpo_trainer_standard(dataset: Any, output_dir: Path) -> dict[str, float
             pad_token_id=processor.tokenizer.pad_token_id or processor.tokenizer.eos_token_id
         ),
     )
-    result = trainer.train()
+    resume = os.path.isdir(str(output_dir)) and any(
+        p.name.startswith("checkpoint-") for p in Path(output_dir).iterdir()
+    )
+    result = trainer.train(resume_from_checkpoint=resume)
     trainer.save_model(str(output_dir))
     processor.save_pretrained(str(output_dir))
 
@@ -531,14 +534,15 @@ def _run_dpo_trainer(dataset: Any, output_dir: Path) -> dict[str, float]:
         fp16=not torch.cuda.is_bf16_supported(),
         bf16=torch.cuda.is_bf16_supported(),
         logging_steps=1,
-        save_steps=50,
-        save_total_limit=2,
+        save_steps=5,
+        save_total_limit=3,
         remove_unused_columns=False,
         # Required to run sequentially. If set to 1, TRL uses multiprocessing which OOMs on T4 Colab GPUs.
         dataset_num_proc=None,
         # CRITICAL: Disable torch.compile to avoid RecursionError with bitsandbytes + Unsloth AOT on Colab T4.
         # See: https://github.com/unslothai/unsloth/issues/1921, #1925
         torch_compile=False,
+        report_to=os.environ.get("DPO_REPORT_TO", "none"),
     )
 
     # For Unsloth/TRL compatibility with Vision DPO
@@ -551,7 +555,10 @@ def _run_dpo_trainer(dataset: Any, output_dir: Path) -> dict[str, float]:
         data_collator=VisionDPODataCollator(pad_token_id=processor.tokenizer.pad_token_id or processor.tokenizer.eos_token_id),
     )
 
-    result = trainer.train()
+    resume = os.path.isdir(str(output_dir)) and any(
+        p.name.startswith("checkpoint-") for p in Path(output_dir).iterdir()
+    )
+    result = trainer.train(resume_from_checkpoint=resume)
     trainer.save_model(str(output_dir))
     processor.save_pretrained(str(output_dir))
 
