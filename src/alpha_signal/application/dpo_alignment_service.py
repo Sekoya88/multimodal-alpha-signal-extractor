@@ -426,7 +426,30 @@ def _run_dpo_trainer_standard(dataset: Any, output_dir: Path) -> dict[str, float
 
     _ensure_trl_vision_shim()
     from trl import DPOTrainer as TRL_DPOTrainer
+    # Patch process_row for older TRL versions
     TRL_DPOTrainer.process_row = staticmethod(_patched_process_row)
+    # Patch module-level _tokenize for TRL 0.12+ (replaces process_row as entry point)
+    import trl.trainer.dpo_trainer as _dpo_mod
+    if hasattr(_dpo_mod, "_tokenize"):
+        _captured_proc = processor
+        def _our_tokenize(
+            features,
+            processing_class=None,
+            processor=None,
+            max_prompt_length=2048,
+            max_completion_length=None,
+            add_special_tokens=False,
+            **_kw,
+        ):
+            _p = processing_class or processor or _captured_proc
+            _tok = _p.tokenizer if hasattr(_p, "tokenizer") else _p
+            return _patched_process_row(
+                features, _p, _tok,
+                max_prompt_length=max_prompt_length,
+                max_completion_length=max_completion_length,
+                add_special_tokens=add_special_tokens,
+            )
+        _dpo_mod._tokenize = _our_tokenize
     original_forward = model.forward
 
     def dpo_vision_forward(*f_args, **f_kwargs):
