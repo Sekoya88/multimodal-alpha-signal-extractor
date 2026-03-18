@@ -65,7 +65,7 @@ def _load_or_build_pairs(service: DPOAlignmentService, max_samples: int | None) 
         dtype=None,
     )
     processor = AutoProcessor.from_pretrained("Qwen/Qwen2.5-VL-3B-Instruct")
-    FastVisionModel.for_inference(model)
+
     device = "cuda" if torch.cuda.is_available() else "cpu"
     model = model.to(device)
 
