@@ -94,7 +94,7 @@ class DPOConfig:
     gradient_accumulation_steps: int = 4
     learning_rate: float = 5e-5
     beta: float = 0.1  # DPO beta
-    max_prompt_length: int = 1024
+    max_prompt_length: int = 2048
     max_length: int = 2048
     seed: int = 42
     output_dir: Path = MODELS_DIR / "dpo-adapter"

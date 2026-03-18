@@ -68,7 +68,7 @@ def _load_or_build_pairs(service: DPOAlignmentService, max_samples: int | None) 
         quantization_config=bnb_config,
         device_map="auto",
     )
-    processor = AutoProcessor.from_pretrained("Qwen/Qwen2.5-VL-3B-Instruct")
+    processor = AutoProcessor.from_pretrained("Qwen/Qwen2.5-VL-3B-Instruct", min_pixels=256*28*28, max_pixels=512*28*28)
     device = "cuda" if torch.cuda.is_available() else "cpu"
 
     pairs = service.build_preference_pairs(
@@ -140,9 +140,11 @@ def _dataset_from_pairs_file(pairs_path: Path):
         imgs = []
         for b64 in rec["images_b64"]:
             imgs.append(Image.open(io.BytesIO(base64.b64decode(b64))).convert("RGB"))
+        p = rec["prompt"]
         return {
             "images": imgs,
-            "prompt": rec["prompt"],
+            "prompt": p,
+            "prompt_raw": p,  # Preserve raw format; process_row uses it to avoid TRL's wrong placeholder count
             "chosen": rec["chosen"],
             "rejected": rec["rejected"],
         }
@@ -150,6 +152,8 @@ def _dataset_from_pairs_file(pairs_path: Path):
     decoded = [_decode(r) for r in records]
     # Normalize prompt so all message content is list (avoids PyArrow "cannot mix list and non-list")
     decoded = [_normalize_prompt(d) for d in decoded]
+    for d in decoded:
+        d["prompt_raw"] = d["prompt"]  # Normalized list for process_row (avoids TRL's wrong placeholder count)
 
     try:
         return Dataset.from_list(decoded)
@@ -163,6 +167,7 @@ def _dataset_from_pairs_file(pairs_path: Path):
                 decoded_np.append({
                     "images": [np.array(img) for img in d["images"]],
                     "prompt": d["prompt"],
+                    "prompt_raw": d.get("prompt_raw", d["prompt"]),
                     "chosen": d["chosen"],
                     "rejected": d["rejected"],
                 })

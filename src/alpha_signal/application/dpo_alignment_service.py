@@ -9,6 +9,7 @@ from __future__ import annotations
 import json
 import logging
 import os
+import re
 from pathlib import Path
 from typing import Any
 
@@ -242,13 +243,26 @@ def _patched_process_row(
     Ensures <|image_pad|> in prompt via processor.apply_chat_template before processor().
     Extracts chosen/rejected text from list format for tokenizer.
     """
+    import re
+    import re
+
     import torch
     processor, tokenizer = processing_class, processing_class.tokenizer
 
-    # Build prompt: TRL may pass list[dict] (raw), str (pre-templated), or list with mixed types
-    raw_prompt = features["prompt"]
+    # Build prompt: prefer prompt_raw (list) so processor expands from actual image — fixes 1786 vs 1820 mismatch
+    raw_prompt = features.get("prompt_raw") or features["prompt"]
     if isinstance(raw_prompt, str):
-        prompt_str = raw_prompt
+        prompt_str = re.sub(
+            r"<\|vision_start\|>.*?<\|vision_end\|>",
+            "<|vision_start|><|image_pad|><|vision_end|>",
+            raw_prompt,
+            flags=re.DOTALL,
+        )
+        if "<|image_pad|>" not in prompt_str and "<|vision_start|>" in raw_prompt:
+            prompt_str = raw_prompt.replace(
+                "<|vision_start|><|vision_end|>",
+                "<|vision_start|><|image_pad|><|vision_end|>",
+            )
     else:
         prompt_msgs = []
         for msg in (raw_prompt if isinstance(raw_prompt, list) else []):
@@ -362,7 +376,7 @@ def _run_dpo_trainer_standard(dataset: Any, output_dir: Path) -> dict[str, float
         device_map="auto",
         trust_remote_code=True,
     )
-    processor = AutoProcessor.from_pretrained("Qwen/Qwen2.5-VL-3B-Instruct", trust_remote_code=True)
+    processor = AutoProcessor.from_pretrained("Qwen/Qwen2.5-VL-3B-Instruct", trust_remote_code=True, min_pixels=256*28*28, max_pixels=512*28*28)
     model = prepare_model_for_kbit_training(model)
     lora_config = LoraConfig(
         r=dpo_cfg.lora_r,
@@ -414,6 +428,7 @@ def _run_dpo_trainer_standard(dataset: Any, output_dir: Path) -> dict[str, float
         remove_unused_columns=False,
         dataset_num_proc=None,
         torch_compile=False,
+        report_to="none",
     )
 
     trainer = TRL_DPOTrainer(
