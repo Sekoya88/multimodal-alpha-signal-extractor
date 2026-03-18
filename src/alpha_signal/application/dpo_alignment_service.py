@@ -180,11 +180,11 @@ def _synthetic_rejected(oracle_obj: dict[str, Any], oracle_action: str) -> str:
     return json.dumps(rejected_obj, ensure_ascii=False)
 
 
-def _run_dpo_trainer(dataset: Any, output_dir: Path) -> dict[str, float]:
+    def _run_dpo_trainer(dataset: Any, output_dir: Path) -> dict[str, float]:
     """Run TRL DPOTrainer and compute calibration metric."""
     import torch
-    from trl import DPOTrainer, DPOConfig
     from unsloth import FastVisionModel
+    from trl import DPOTrainer, DPOConfig
 
     from config import dpo_cfg
 
@@ -218,7 +218,8 @@ def _run_dpo_trainer(dataset: Any, output_dir: Path) -> dict[str, float]:
         max_prompt_length=dpo_cfg.max_prompt_length,
         max_length=dpo_cfg.max_length,
         seed=dpo_cfg.seed,
-        bf16=True,
+        fp16=not torch.cuda.is_bf16_supported(),
+        bf16=torch.cuda.is_bf16_supported(),
         logging_steps=1,
         save_steps=50,
         save_total_limit=2,
