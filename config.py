@@ -178,5 +178,112 @@ class PipelineConfig:
 dataset_cfg = DatasetConfig()
 training_cfg = TrainingConfig()
 dpo_cfg = DPOConfig()
+reward_model_cfg = RewardModelConfig()
+grpo_cfg = GRPOConfig()
+temporal_cfg = TemporalConfig()
+benchmark_cfg = BenchmarkConfig()
 vllm_cfg = VLLMConfig()
 pipeline_cfg = PipelineConfig()
+@dataclass(frozen=True)
+class RewardModelConfig:
+    """Configuration for the Visual Reward Model (Sprint 2)."""
+
+    base_model: str = "unsloth/Qwen2.5-VL-3B-Instruct"
+    max_seq_length: int = 2048
+    load_in_4bit: bool = True
+    # MLP head
+    hidden_dim: int = 256          # MLP hidden layer dimension
+    dropout: float = 0.1
+    # Training
+    num_train_epochs: int = 3
+    per_device_train_batch_size: int = 4
+    learning_rate: float = 1e-4
+    weight_decay: float = 0.01
+    seed: int = 42
+    # Reward labeling
+    reward_threshold: float = 0.02  # 2% return → reward 1.0
+    # Paths
+    output_dir: Path = MODELS_DIR / "reward-model"
+    training_data_path: Path = DATASET_DIR / "reward_training_data.jsonl"
+
+
+@dataclass(frozen=True)
+class GRPOConfig:
+    """Configuration for GRPO (Group Relative Policy Optimization) training (Sprint 3)."""
+
+    base_model: str = "unsloth/Qwen2.5-VL-3B-Instruct"
+    max_seq_length: int = 2048
+    load_in_4bit: bool = True
+    # LoRA
+    lora_r: int = 16
+    lora_alpha: int = 16
+    lora_dropout: float = 0.0
+    target_modules: tuple[str, ...] = (
+        "q_proj", "k_proj", "v_proj", "o_proj",
+        "gate_proj", "up_proj", "down_proj",
+    )
+    # GRPO specifics
+    group_size: int = 8                  # N predictions per chart
+    temperature: float = 0.7            # Temperature for diverse sampling
+    epsilon: float = 0.2                # PPO clipping epsilon
+    reward_weight_direction: float = 0.6
+    reward_weight_calibration: float = 0.4
+    # Training
+    num_train_epochs: int = 2
+    per_device_train_batch_size: int = 1
+    gradient_accumulation_steps: int = 4
+    learning_rate: float = 1e-5
+    max_grad_norm: float = 1.0
+    seed: int = 42
+    # Logging
+    log_to_wandb: bool = False
+    log_csv_path: Path = DATASET_DIR / "grpo_reward_curves.csv"
+    # Paths
+    output_dir: Path = MODELS_DIR / "grpo-adapter"
+    dataset_path: Path = DATASET_DIR / "training_data.jsonl"
+
+
+@dataclass(frozen=True)
+class TemporalConfig:
+    """Configuration for Temporal Multi-Frame Extension (Sprint 4)."""
+
+    n_frames: int = 8                   # Number of consecutive windows
+    window_size: int = 60               # Trading days per chart
+    stride: int = 5                     # Days between frames
+    # Position embeddings
+    position_embedding_dim: int = 64    # Learned temporal position embedding dim
+    # Model
+    base_model: str = "unsloth/Qwen2.5-VL-3B-Instruct"
+    max_seq_length: int = 4096          # Larger context for multi-image
+    load_in_4bit: bool = True
+    # Benchmark
+    benchmark_holdout_ratio: float = 0.2
+    seed: int = 42
+    # Paths
+    output_dir: Path = MODELS_DIR / "temporal-extension"
+    benchmark_results_path: Path = DATASET_DIR / "temporal_benchmark.json"
+
+
+@dataclass(frozen=True)
+class BenchmarkConfig:
+    """Configuration for Production Inference Benchmark (Sprint 5)."""
+
+    # Redis Cache
+    redis_url: str = "redis://localhost:6379/1"
+    cache_ttl_seconds: int = 3600  # 1 hour
+    # vLLM Optimization Defaults
+    tensor_parallel_size: int = 1
+    max_num_seqs: int = 32
+    gpu_memory_utilization: float = 0.90
+    enable_prefix_caching: bool = True
+    # Speculative Decoding
+    speculative_draft_model: str = "Qwen/Qwen2.5-0.5B-Instruct"
+    speculative_draft_tensor_parallel_size: int = 1
+    num_speculative_tokens: int = 4  # gamma
+    # Benchmark execution
+    concurrent_users: list[int] = field(default_factory=lambda: [1, 4, 16, 32])
+    requests_per_user: int = 5
+    seed: int = 42
+    # Paths
+    benchmark_results_path: Path = DATASET_DIR / "inference_benchmark.json"
+    benchmark_plot_path: Path = DATASET_DIR / "inference_benchmark_plot.png"
