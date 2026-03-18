@@ -94,7 +94,7 @@ class DPOAlignmentService(DPOAlignmentPort):
             # Model prediction (rejected when wrong)
             # Format messages with image for processor
             infer_messages = [
-                {"role": "system", "content": system_text},
+                {"role": "system", "content": [{"type": "text", "text": system_text}]},
                 {"role": "user", "content": [{"type": "image", "image": image}, {"type": "text", "text": user_text}]},
             ]
             with torch.no_grad():
@@ -180,61 +180,61 @@ def _synthetic_rejected(oracle_obj: dict[str, Any], oracle_action: str) -> str:
     return json.dumps(rejected_obj, ensure_ascii=False)
 
 
-def _run_dpo_trainer(dataset: Any, output_dir: Path) -> dict[str, float]:
-    """Run TRL DPOTrainer and compute calibration metric."""
-    import torch
-    from trl import DPOTrainer, DPOConfig
-    from trl.trainer.dpo_trainer import DataCollatorForVisionPreference
-    from unsloth import FastVisionModel
+    def _run_dpo_trainer(dataset: Any, output_dir: Path) -> dict[str, float]:
+        """Run TRL DPOTrainer and compute calibration metric."""
+        import torch
+        from trl import DPOTrainer, DPOConfig
+        from unsloth import FastVisionModel
 
-    from config import dpo_cfg
+        from config import dpo_cfg
 
-    if not torch.cuda.is_available():
-        raise RuntimeError("DPO training requires CUDA")
+        if not torch.cuda.is_available():
+            raise RuntimeError("DPO training requires CUDA")
 
-    model, processor = FastVisionModel.from_pretrained(
-        model_name=dpo_cfg.base_model,
-        max_seq_length=dpo_cfg.max_seq_length,
-        load_in_4bit=dpo_cfg.load_in_4bit,
-        dtype=None,
-    )
-    model = FastVisionModel.get_peft_model(
-        model,
-        r=dpo_cfg.lora_r,
-        lora_alpha=dpo_cfg.lora_alpha,
-        lora_dropout=dpo_cfg.lora_dropout,
-        target_modules="all-linear",
-        use_gradient_checkpointing="unsloth",
-        random_state=dpo_cfg.seed,
-    )
-    FastVisionModel.for_training(model)
+        model, processor = FastVisionModel.from_pretrained(
+            model_name=dpo_cfg.base_model,
+            max_seq_length=dpo_cfg.max_seq_length,
+            load_in_4bit=dpo_cfg.load_in_4bit,
+            dtype=None,
+        )
+        model = FastVisionModel.get_peft_model(
+            model,
+            r=dpo_cfg.lora_r,
+            lora_alpha=dpo_cfg.lora_alpha,
+            lora_dropout=dpo_cfg.lora_dropout,
+            target_modules="all-linear",
+            use_gradient_checkpointing="unsloth",
+            random_state=dpo_cfg.seed,
+        )
+        FastVisionModel.for_training(model)
 
-    collator = DataCollatorForVisionPreference(processor=processor)
+        args = DPOConfig(
+            output_dir=str(output_dir),
+            num_train_epochs=dpo_cfg.num_train_epochs,
+            per_device_train_batch_size=dpo_cfg.per_device_train_batch_size,
+            gradient_accumulation_steps=dpo_cfg.gradient_accumulation_steps,
+            learning_rate=dpo_cfg.learning_rate,
+            beta=dpo_cfg.beta,
+            max_prompt_length=dpo_cfg.max_prompt_length,
+            max_length=dpo_cfg.max_length,
+            seed=dpo_cfg.seed,
+            bf16=True,
+            logging_steps=1,
+            save_steps=50,
+            save_total_limit=2,
+            remove_unused_columns=False,
+            # Required for newer TRL to process chat templates correctly
+            dataset_num_proc=1,
+        )
 
-    args = DPOConfig(
-        output_dir=str(output_dir),
-        num_train_epochs=dpo_cfg.num_train_epochs,
-        per_device_train_batch_size=dpo_cfg.per_device_train_batch_size,
-        gradient_accumulation_steps=dpo_cfg.gradient_accumulation_steps,
-        learning_rate=dpo_cfg.learning_rate,
-        beta=dpo_cfg.beta,
-        max_prompt_length=dpo_cfg.max_prompt_length,
-        max_length=dpo_cfg.max_length,
-        seed=dpo_cfg.seed,
-        bf16=True,
-        logging_steps=1,
-        save_steps=50,
-        save_total_limit=2,
-        remove_unused_columns=False,
-    )
-
-    trainer = DPOTrainer(
-        model=model,
-        args=args,
-        train_dataset=dataset,
-        data_collator=collator,
-        processing_class=processor,
-    )
+        # For Unsloth/TRL compatibility with Vision DPO
+        # Passing None to data_collator lets DPOTrainer use its default DataCollatorForPreference
+        trainer = DPOTrainer(
+            model=model,
+            args=args,
+            train_dataset=dataset,
+            processing_class=processor,
+        )
 
     result = trainer.train()
     trainer.save_model(str(output_dir))
