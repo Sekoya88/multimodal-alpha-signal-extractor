@@ -28,6 +28,9 @@ import logging
 import sys
 from pathlib import Path
 
+# Increase recursion limit to prevent PyTorch/bitsandbytes conflicts on Colab
+sys.setrecursionlimit(5000)
+
 import torch
 
 from config import DATASET_DIR, MODELS_DIR, dpo_cfg

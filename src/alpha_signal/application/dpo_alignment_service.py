@@ -110,6 +110,7 @@ class DPOAlignmentService(DPOAlignmentPort):
                     **full_input,
                     max_new_tokens=256,
                     do_sample=False,
+                    use_cache=False,  # Important for bitsandbytes recursion bug
                     pad_token_id=processor.tokenizer.pad_token_id
                     or processor.tokenizer.eos_token_id,
                 )
