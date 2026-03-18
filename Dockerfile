@@ -28,9 +28,9 @@ RUN mkdir -p $OLLAMA_MODELS
 COPY --chown=user:user . .
 
 # 5. Install the project and dependencies
-# Install llama-cpp-python using exactly the pre-built wheel from jllllll
+# Install llama-cpp-python using exactly the pre-built wheel from abetlen
 # This bypasses source compilation entirely and avoids the build timeout
-RUN pip install --no-cache-dir https://github.com/jllllll/llama-cpp-python-cuBLAS-wheels/releases/download/cpu/llama_cpp_python-0.2.77+cpuavx2-cp311-cp311-manylinux_2_31_x86_64.whl
+RUN pip install --no-cache-dir https://github.com/abetlen/llama-cpp-python/releases/download/v0.2.62/llama_cpp_python-0.2.62-cp311-cp311-manylinux_2_17_x86_64.whl
 
 RUN pip install --no-cache-dir build && \
     pip install --no-cache-dir -e .
