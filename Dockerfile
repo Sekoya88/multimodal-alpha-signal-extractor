@@ -24,17 +24,15 @@ WORKDIR $HOME/app
 # Create dir for Ollama models to avoid permission issues
 RUN mkdir -p $OLLAMA_MODELS
 
-# 4. Copy and install Python dependencies
-COPY --chown=user:user pyproject.toml .
-# We use pip to install the project and its dependencies
+# 4. Copy everything (we need README and src/ for the editable install)
+COPY --chown=user:user . .
+
+# 5. Install the project and dependencies
 RUN pip install --no-cache-dir build && \
     pip install --no-cache-dir -e .
 
-# 5. Force specific install for llama-cpp-python (CPU mode for free tier)
+# 6. Force specific install for llama-cpp-python (CPU mode for free tier)
 RUN CMAKE_ARGS="-DGGML_CPU=ON" pip install --no-cache-dir llama-cpp-python
-
-# 6. Copy the rest of the application
-COPY --chown=user:user . .
 
 # 7. Make the entrypoint executable
 RUN chmod +x scripts/entrypoint.sh
