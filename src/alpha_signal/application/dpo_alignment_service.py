@@ -92,9 +92,9 @@ class DPOAlignmentService(DPOAlignmentPort):
                 oracle_action = "HOLD"
 
             # Model prediction (rejected when wrong)
-            # Format messages with image for processor
+            # Format messages with image for processor - Qwen2-VL requires text content to be explicit dict
             infer_messages = [
-                {"role": "system", "content": system_text},
+                {"role": "system", "content": [{"type": "text", "text": system_text}]},
                 {"role": "user", "content": [{"type": "image", "image": image}, {"type": "text", "text": user_text}]},
             ]
             with torch.no_grad():
