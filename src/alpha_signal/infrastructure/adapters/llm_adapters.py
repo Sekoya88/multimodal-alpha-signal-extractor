@@ -73,6 +73,17 @@ def _parse_json_response(raw_content: str, parser: PydanticOutputParser) -> Any:
 # Sentiment Adapter
 # ============================================================================
 
+def _log_retry(rs, name: str):
+    """Log retry attempt with exception details."""
+    exc = None
+    if rs.outcome is not None and hasattr(rs.outcome, "exception"):
+        try:
+            exc = rs.outcome.exception()
+        except Exception:
+            pass
+    logger.warning(f"{name} retry {rs.attempt_number}/3... {exc}")
+
+
 class OllamaSentimentAdapter(SentimentPort):
     """Adapter for textual sentiment analysis using Ollama."""
 
@@ -85,7 +96,7 @@ class OllamaSentimentAdapter(SentimentPort):
         stop=stop_after_attempt(3),
         wait=wait_exponential(multiplier=1, min=2, max=10),
         retry=retry_if_exception_type(Exception),
-        before_sleep=lambda rs: logger.warning(f"Sentiment retry {rs.attempt_number}/3..."),
+        before_sleep=lambda rs: _log_retry(rs, "Sentiment"),
     )
     async def analyze_sentiment(self, news_text: str) -> SentimentResult:
         logger.info(f"Invoking Sentiment chain (Ollama {self._model_name})...")
@@ -200,7 +211,7 @@ class LlamaCppVlmAdapter(BaseVlmAdapter):
         stop=stop_after_attempt(3),
         wait=wait_exponential(multiplier=1, min=2, max=10),
         retry=retry_if_exception_type(Exception),
-        before_sleep=lambda rs: logger.warning(f"VLM retry {rs.attempt_number}/3..."),
+        before_sleep=lambda rs: _log_retry(rs, "VLM"),
     )
     async def analyze_chart(self, image_path: Path, news_text: str) -> TradingSignal:
         logger.info(f"Invoking VLM via llama.cpp ({Path(self._model_path).name})...")

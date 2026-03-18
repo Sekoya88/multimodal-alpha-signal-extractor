@@ -24,11 +24,17 @@ done
 echo "✅ Ollama is up!"
 
 # --- 2. Pull the Text Sentiment Model ---
-# Override via OLLAMA_MODEL env (e.g. OLLAMA_MODEL=qwen2:0.5b for free-tier speed).
+# Override via OLLAMA_MODEL env (e.g. OLLAMA_MODEL=qwen2.5:0.5b for free-tier speed).
 MODEL_NAME="${OLLAMA_MODEL:-llama3:8b}"
 echo "⬇️  Pulling $MODEL_NAME (this may take a few minutes the first time)..."
 ollama pull $MODEL_NAME
 echo "✅ $MODEL_NAME is ready!"
+
+# Warm up: pre-load model via /api/chat (same as LangChain) to avoid 500 on first user request
+echo "🔥 Warming up sentiment model..."
+curl -s -X POST http://localhost:11434/api/chat -H "Content-Type: application/json" \
+  -d '{"model":"'"$MODEL_NAME"'","messages":[{"role":"user","content":"Hi"}],"stream":false}' > /dev/null || true
+echo "✅ Model warmed up."
 
 # --- 3. Download VLM (fine-tuned alpha-signal) from HF Hub ---
 if [ ! -f "$VLM_PATH" ]; then

@@ -29,9 +29,10 @@ RUN mkdir -p $OLLAMA_MODELS
 COPY --chown=user:user . .
 
 # 5. Install the project and dependencies
-# Install llama-cpp-python using exactly the pre-built wheel from abetlen
-# This bypasses source compilation entirely and avoids the build timeout
-RUN pip install --no-cache-dir https://github.com/abetlen/llama-cpp-python/releases/download/v0.2.62/llama_cpp_python-0.2.62-cp311-cp311-manylinux_2_17_x86_64.whl
+# Install llama-cpp-python >=0.3.10 from CPU wheel index (Qwen25VLChatHandler)
+# Old 0.2.62 lacked VLM chat handlers — required for alpha-signal-q4km.gguf
+RUN pip install --no-cache-dir "llama-cpp-python>=0.3.10" \
+    --extra-index-url https://abetlen.github.io/llama-cpp-python/whl/cpu
 
 RUN pip install --no-cache-dir build && \
     pip install --no-cache-dir -e .

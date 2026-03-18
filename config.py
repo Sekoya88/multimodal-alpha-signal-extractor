@@ -128,7 +128,7 @@ class PipelineConfig:
     vlm_max_tokens: int = 1024
 
     # Ollama endpoint (text-only sentiment LLM)
-    # Override via OLLAMA_MODEL (e.g. qwen2:0.5b for HF free-tier).
+    # Override via OLLAMA_MODEL (e.g. qwen2.5:0.5b for HF free-tier).
     ollama_base_url: str = "http://localhost:11434"
     ollama_model: str = os.environ.get("OLLAMA_MODEL", "llama3:8b")
     ollama_temperature: float = 0.0

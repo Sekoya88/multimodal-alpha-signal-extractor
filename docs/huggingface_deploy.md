@@ -5,7 +5,7 @@ Pour déployer ton dashboard Streamlit **Alpha-Signal Extractor** gratuitement s
 ## ⚠️ Avertissement sur les limites (Free Tier)
 Les *Spaces gratuits* de Hugging Face offrent : **16 Go de RAM** et **2 vCPU**.
 - Faire tourner simultanément **Ollama (LLaMA 3 8B ~4.7Go RAM)** + **llama.cpp (Qwen2.5-VL 3B ~2Go RAM)** va prendre ~7Go de RAM minimum au repos. C'est jouable mais l'inférence texte + vision va être **très lente** sur un pauvre dual-core CPU (attends-toi à ~1-2 tokens / sec et potentiellement un crash OOM si les contextes explosent).
-- Pour accélérer : dans les **Variables** du Space, ajoute `OLLAMA_MODEL=qwen2:0.5b` (modèle sentiment plus léger).
+- Pour accélérer : dans les **Variables** du Space, ajoute `OLLAMA_MODEL=qwen2.5:0.5b` (modèle sentiment plus léger).
 
 ---
 

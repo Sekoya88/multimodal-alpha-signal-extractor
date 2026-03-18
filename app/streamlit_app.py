@@ -405,11 +405,11 @@ with col3:
 
 with col4:
     st.html("<div style='margin-top:28px;'></div>")
-    fetch_only = st.button("Fetch Market Data", use_container_width=True)
+    fetch_only = st.button("Fetch Market Data", width="stretch")
 
 with col5:
     st.html("<div style='margin-top:28px;'></div>")
-    run_analysis = st.button("▶ RUN ANALYSIS", type="primary", use_container_width=True)
+    run_analysis = st.button("▶ RUN ANALYSIS", type="primary", width="stretch")
 
 st.html('</div>')
 
@@ -541,7 +541,7 @@ else:
         font=dict(family="JetBrains Mono", color="#94a3b8"),
         margin=dict(l=10, r=10, t=30, b=10)
     )
-    st.plotly_chart(fig, use_container_width=True, config={"displayModeBar": False})
+    st.plotly_chart(fig, width="stretch", config={"displayModeBar": False})
     st.html('</div>')
 
     # ── Logic & Output Grid ──
