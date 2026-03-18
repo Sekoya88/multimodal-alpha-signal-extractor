@@ -472,11 +472,15 @@ def _run_dpo_trainer_standard(dataset: Any, output_dir: Path) -> dict[str, float
 
     import inspect as _insp
     _pc_key = "processing_class" if "processing_class" in _insp.signature(TRL_DPOTrainer.__init__).parameters else "tokenizer"
+    # Old TRL uses `tokenizer=` and calls self.tokenizer.pad_token_id directly on the object.
+    # Passing a Processor (which has no pad_token_id) causes AttributeError.
+    # When on the legacy path, pass processor.tokenizer so pad_token_id is accessible.
+    _proc_or_tok = processor if _pc_key == "processing_class" else processor.tokenizer
     trainer = TRL_DPOTrainer(
         model=model,
         args=args,
         train_dataset=dataset,
-        **{_pc_key: processor},
+        **{_pc_key: _proc_or_tok},
         data_collator=_make_vision_dpo_collator(
             pad_token_id=processor.tokenizer.pad_token_id or processor.tokenizer.eos_token_id
         ),
