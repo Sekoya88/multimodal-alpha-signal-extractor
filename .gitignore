@@ -31,6 +31,9 @@ dataset/charts/
 dataset/demo_chart.png
 dataset/live_*.png
 dataset/decision_*.json
+dataset/live_sessions/*.png
+**/*.png
 
 # Secrets
 .env
+forMe.md

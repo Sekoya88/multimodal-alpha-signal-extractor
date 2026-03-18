@@ -7,22 +7,23 @@ Run:  streamlit run app/streamlit_app.py
 
 from __future__ import annotations
 
+import asyncio
 import sys
 from datetime import datetime
 from pathlib import Path
-from importlib import import_module
 
-import streamlit as st
 import pandas as pd
+import streamlit as st
 
 # ── Project imports ──
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(PROJECT_ROOT))
 sys.path.insert(0, str(PROJECT_ROOT / "src"))
 
-from alpha_signal.indicators import add_indicators
-from alpha_signal.chart_renderer import create_plotly_chart, save_live_chart
-from alpha_signal.data_fetcher import fetch_market_data, fetch_news, format_news_text
+from alpha_signal.presentation.components import create_plotly_chart
+from alpha_signal.presentation.di_container import build_analyze_market_usecase
+from alpha_signal.infrastructure.adapters.yfinance_adapter import YFinanceAdapter
+
 
 # ============================================================================
 # Page Config
@@ -370,21 +371,37 @@ st.html('<div class="command-center">')
 col1, col2, col3, col4, col5 = st.columns([1.5, 1, 1.5, 1.5, 1.5], gap="medium")
 
 with col1:
-    ticker = st.selectbox(
+    ASSET_GROUPS = {
+        "Magnificent 7": ["NVDA", "AAPL", "MSFT", "GOOGL", "AMZN", "META", "TSLA"],
+        "Crypto": ["BTC-USD", "ETH-USD", "SOL-USD", "XRP-USD", "DOGE-USD"],
+        "Semiconductors": ["AMD", "TSM", "AVGO", "INTC", "QCOM", "ARM"],
+        "Finance & Fintech": ["JPM", "V", "MA", "BAC", "PYPL", "SQ", "COIN", "HOOD"],
+        "Indices & ETFs": ["SPY", "QQQ", "DIA", "IWM", "VIX", "ARKK"],
+        "Healthcare": ["LLY", "UNH", "JNJ", "ABBV", "NVO"],
+        "Energy & Industrials": ["XOM", "CVX", "CAT", "GE", "BA", "LMT"],
+        "Consumer": ["WMT", "PG", "KO", "PEP", "COST", "MCD", "DIS"]
+    }
+    FLAT_ASSETS = [f"{t}  —  {category}" for category, tickers in ASSET_GROUPS.items() for t in tickers]
+
+    selected_asset = st.selectbox(
         "Market Asset",
-        ["AAPL", "NVDA", "MSFT", "GOOGL", "AMZN", "BTC-USD", "ETH-USD"],
+        FLAT_ASSETS,
         index=0,
     )
+    ticker = selected_asset.split("  —  ")[0]
 
 with col2:
     days = st.number_input("Window", min_value=10, max_value=200, value=60, step=10)
 
 with col3:
+    # Since we fine-tuned for llama.cpp, we default to it and disable the others visually
     vlm_provider = st.selectbox(
         "VLM Engine",
-        ["llama_cpp", "ollama", "vllm"],
+        ["llama_cpp (Fine-tuned Qwen2.5)"],
         index=0,
+        disabled=True
     )
+    # The backend will still read "llama_cpp" from config, we just lock the UI
 
 with col4:
     st.html("<div style='margin-top:28px;'></div>")
@@ -403,10 +420,14 @@ st.html('</div>')
 if fetch_only or run_analysis:
     with st.spinner("Synchronizing market data..."):
         try:
-            st.session_state.df = fetch_market_data(ticker, days)
-            st.session_state.news_articles = fetch_news(ticker, max_articles=8)
+            # For purely fetching presentation data without running pipeline
+            adapter = YFinanceAdapter()
+            st.session_state.df = adapter.fetch_data(ticker, days)
+            st.session_state.news_articles = adapter.fetch_news_articles(ticker, max_articles=8)
         except Exception as e:
             st.error(f"Systems error: {e}")
+            from alpha_signal.infrastructure.logger import logger
+            logger.exception("❌ Error during market data / news synchronization:")
             st.stop()
 
 # ============================================================================
@@ -451,7 +472,7 @@ if st.session_state.df is None:
             <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="12 2 2 7 12 12 22 7 12 2"></polygon><polyline points="2 17 12 22 22 17"></polyline><polyline points="2 12 12 17 22 12"></polyline></svg>
         </div>
         <div class="feature-title">Agentic Signal Merging</div>
-        <div class="feature-desc">LangChain handles orchestration, merging purely technical visual signals with macroeconomic sentiment via cross-validation to produce structured JSON trading executions.</div>
+        <div class="feature-desc">Clean Architecture orchestrates execution, merging purely technical visual signals with macroeconomic sentiment via cross-validation to produce structured JSON trading executions.</div>
     </div>
 </div>
 """)
@@ -528,28 +549,42 @@ else:
 
     with col_l:
         st.html('<h3 class="title-font" style="font-size:1.4rem; margin-bottom:1rem; margin-top:0;">Information Flow</h3>')
-        st.html('<div class="glass-card" style="height: 450px; overflow-y: auto; padding:0;">')
         
         articles = st.session_state.news_articles or []
         if articles:
-            html = ""
+            html_content = ""
             for a in articles:
                 pub = a.get("publisher", "NEWS")
                 title = a.get("title", "")
                 summary = a.get("summary", "")
+                link = a.get("url", f"https://finance.yahoo.com/quote/{ticker}") # Real link or fallback
                 
-                html += f"""
-<div class="news-card">
+                html_content += f"""
+<a href="{link}" target="_blank" style="text-decoration:none;">
+<div class="news-card" style="transition: background 0.2s; cursor:pointer;">
     <div class="news-pub">{pub}</div>
-    <div class="news-title">{title}</div>
+    <div class="news-title" style="transition: color 0.2s;">{title}</div>
     <div class="news-dist">{summary[:120]}...</div>
 </div>
+</a>
 """
-            st.html(html)
+            
+            full_html = f"""
+            <style>
+                .news-card:hover {{ background: rgba(255,255,255,0.02); }}
+                .news-card:hover .news-title {{ color: #00f2fe; }}
+            </style>
+            <div class="glass-card" style="height: 450px; overflow-y: auto; padding:0;">
+                {html_content}
+            </div>
+            """
+            st.html(full_html)
         else:
-            st.html('<div style="padding: 30px; color:#64748b; text-align:center;">No news available.</div>')
-        
-        st.html('</div>')
+            st.html("""
+            <div class="glass-card" style="height: 450px; overflow-y: auto; padding:0; display:flex; align-items:center; justify-content:center;">
+                <div style="padding: 30px; color:#64748b; text-align:center;">No news available.</div>
+            </div>
+            """)
 
     with col_r:
         st.html('<h3 class="title-font" style="font-size:1.4rem; margin-bottom:1rem; margin-top:0;">Execution Matrix</h3>')
@@ -560,26 +595,19 @@ else:
             with prog_container.container():
                 st.html('<div class="glass-card">')
                 st.html('<h4 class="title-font" style="margin-top:0;">Pipeline Initialization</h4>')
-                progress = st.progress(0, text="Rendering visual chart state...")
+                progress = st.progress(0, text="Instantiating Clean Architecture use cases...")
                 
                 try:
-                    chart_dir = PROJECT_ROOT / "dataset"
-                    chart_path = save_live_chart(df, ticker, chart_dir)
+                    # Execute Use Case instead of raw pipeline functions
+                    output_dir = PROJECT_ROOT / "dataset" / "live_sessions"
+                    usecase = build_analyze_market_usecase(output_dir=output_dir)
                     
-                    progress.progress(30, text="Aggregating text context...")
-                    news_text = format_news_text(articles, ticker)
-                    
-                    progress.progress(50, text="Invoking VLM & NLP models...")
-                    pipeline_mod = import_module("04_langchain_pipeline")
-                    
-                    progress.progress(80, text="Synthesizing final vectors...")
-                    decision = pipeline_mod.run_pipeline_sync(chart_path, news_text)
+                    progress.progress(30, text="Executing VLM & Sentiment analysis...")
+                    # The usecase fetches data, renders chart and runs the LLMs
+                    decision = asyncio.run(usecase.execute(ticker=ticker, days=days))
                     
                     progress.progress(100, text="Decision rendered.")
                     st.session_state.decision = decision.model_dump()
-                    
-                    output_path = chart_dir / f"decision_{ticker}_{datetime.now().strftime('%Y%m%d_%H%M')}.json"
-                    output_path.write_text(decision.model_dump_json(indent=2), encoding="utf-8")
                 
                 except Exception as e:
                     st.error(f"Execution Error: {e}")

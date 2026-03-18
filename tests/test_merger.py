@@ -4,12 +4,12 @@ from __future__ import annotations
 
 import pytest
 
-from alpha_signal.schemas import (
+from alpha_signal.domain.models import (
     SentimentResult,
     TradeAction,
     TradingSignal,
 )
-from alpha_signal.pipeline import merge_signals
+from alpha_signal.domain.services import SignalMergerService
 
 
 # ============================================================================
@@ -45,7 +45,7 @@ class TestMergeSignals:
 
     def test_aligned_buy_boosts_confidence(self):
         """When both VLM says BUY and sentiment is BULLISH, confidence is boosted."""
-        decision = merge_signals(
+        decision = SignalMergerService.merge_signals(
             _make_signal("BUY", 0.8),
             _make_sentiment("BULLISH", 0.9),
         )
@@ -54,7 +54,7 @@ class TestMergeSignals:
         assert decision.final_confidence == pytest.approx(0.83, abs=0.01)
 
     def test_aligned_sell_boosts_confidence(self):
-        decision = merge_signals(
+        decision = SignalMergerService.merge_signals(
             _make_signal("SELL", 0.8),
             _make_sentiment("BEARISH", 0.9),
         )
@@ -63,7 +63,7 @@ class TestMergeSignals:
 
     def test_conflicting_signals_reduce_confidence(self):
         """VLM BUY + BEARISH sentiment should reduce confidence."""
-        decision = merge_signals(
+        decision = SignalMergerService.merge_signals(
             _make_signal("BUY", 0.8),
             _make_sentiment("BEARISH", 0.9),
         )
@@ -72,7 +72,7 @@ class TestMergeSignals:
 
     def test_hold_always_respected(self):
         """HOLD from VLM is respected regardless of sentiment."""
-        decision = merge_signals(
+        decision = SignalMergerService.merge_signals(
             _make_signal("HOLD", 0.6),
             _make_sentiment("BULLISH", 0.95),
         )
@@ -81,14 +81,14 @@ class TestMergeSignals:
 
     def test_confidence_capped_at_099(self):
         """Even with max-aligned signals, confidence should not exceed 0.99."""
-        decision = merge_signals(
+        decision = SignalMergerService.merge_signals(
             _make_signal("BUY", 1.0),
             _make_sentiment("BULLISH", 1.0),
         )
         assert decision.final_confidence <= 0.99
 
     def test_meta_contains_required_fields(self):
-        decision = merge_signals(
+        decision = SignalMergerService.merge_signals(
             _make_signal("BUY", 0.8),
             _make_sentiment("BULLISH", 0.8),
         )
@@ -97,14 +97,14 @@ class TestMergeSignals:
         assert "signals_aligned" in decision.meta
 
     def test_signals_aligned_true(self):
-        decision = merge_signals(
+        decision = SignalMergerService.merge_signals(
             _make_signal("BUY", 0.8),
             _make_sentiment("BULLISH", 0.8),
         )
         assert decision.meta["signals_aligned"] is True
 
     def test_signals_aligned_false(self):
-        decision = merge_signals(
+        decision = SignalMergerService.merge_signals(
             _make_signal("BUY", 0.8),
             _make_sentiment("BEARISH", 0.8),
         )

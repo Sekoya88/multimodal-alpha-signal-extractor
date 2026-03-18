@@ -5,7 +5,7 @@ from __future__ import annotations
 import pytest
 from pydantic import ValidationError
 
-from alpha_signal.schemas import (
+from alpha_signal.domain.models import (
     SentimentResult,
     TradeAction,
     TradingDecision,

@@ -6,7 +6,7 @@ import numpy as np
 import pandas as pd
 import pytest
 
-from alpha_signal.indicators import (
+from alpha_signal.domain.indicators import (
     add_indicators,
     compute_bollinger_bands,
     compute_rsi,

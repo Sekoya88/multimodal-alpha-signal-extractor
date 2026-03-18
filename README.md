@@ -88,13 +88,11 @@ multimodal-alpha-signal-extractor/
 ├── config.py                     # Centralized dataclass configs
 ├── pytest.ini                    # Test configuration
 │
-├── src/alpha_signal/             # Shared library modules
-│   ├── __init__.py
-│   ├── indicators.py             # RSI (Wilder), Bollinger Bands
-│   ├── schemas.py                # TradingSignal, SentimentResult, TradingDecision
-│   ├── chart_renderer.py         # mplfinance (PNG) + Plotly (interactive)
-│   ├── data_fetcher.py           # Yahoo Finance (OHLCV + news)
-│   └── pipeline.py               # LangChain orchestrator with callbacks
+├── src/alpha_signal/             # Core application (Clean Architecture / DDD)
+│   ├── domain/                   # Business rules (Models, Indicators, Services)
+│   ├── application/              # Use Cases & Interface Ports
+│   ├── infrastructure/           # Adapters (yfinance, LangChain, Llama.cpp) & Logging
+│   └── presentation/             # CLI & DI Container
 │
 ├── app/                          # Streamlit frontend
 │   └── streamlit_app.py          # Cyber-Fintech dashboard
@@ -109,8 +107,6 @@ multimodal-alpha-signal-extractor/
 ├── 02_finetune_colab.py          # Step 2b: QLoRA fine-tuning (Google Colab T4)
 ├── 03_serve_ollama.py            # Step 3a: Ollama model management (Apple Silicon)
 ├── 03_serve_vllm.py              # Step 3b: vLLM serving (CUDA)
-├── 04_langchain_pipeline.py      # Step 4: LangChain pipeline CLI
-├── 05_live_analysis.py           # Step 5: Live analysis CLI
 │
 ├── dataset/                      # Generated charts + JSONL (git-ignored)
 └── models/                       # Checkpoints + GGUF files (git-ignored)
@@ -304,18 +300,14 @@ Opens at `http://localhost:8501` with:
 
 ### CLI Pipeline
 
+The pipeline is packaged via `pyproject.toml` and installs a global command `alpha-signal`.
+
 ```bash
-# Demo mode (uses a chart from the dataset)
-python 04_langchain_pipeline.py --demo
-
-# Custom chart + news
-python 04_langchain_pipeline.py \
-    --image chart.png \
-    --news "Apple beats earnings expectations with +12% revenue growth" \
-    --output signal.json
-
 # Live analysis (fetches real market data)
-python 05_live_analysis.py --ticker NVDA --days 90
+alpha-signal --ticker NVDA --days 90
+
+# With JSON structured logs for production observability
+alpha-signal --ticker AAPL --json-logs
 ```
 
 ---
