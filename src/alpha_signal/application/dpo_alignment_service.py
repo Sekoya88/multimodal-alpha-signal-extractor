@@ -186,6 +186,12 @@ def _synthetic_rejected(oracle_obj: dict[str, Any], oracle_action: str) -> str:
 
 
 def _ensure_trl_vision_shim() -> None:
+    import os
+    # transformers 5 removed TRANSFORMERS_CACHE — llm_blender (TRL dep) needs it
+    import transformers.utils.hub as _hub
+    if not hasattr(_hub, "TRANSFORMERS_CACHE"):
+        _hub.TRANSFORMERS_CACHE = os.path.expanduser("~/.cache/huggingface/hub")
+    # transformers 5 removed MODEL_FOR_VISION_2_SEQ_MAPPING_NAMES — TRL dpo_trainer needs it
     import transformers.models.auto.modeling_auto as auto
     if not hasattr(auto, "MODEL_FOR_VISION_2_SEQ_MAPPING_NAMES"):
         from collections import OrderedDict
