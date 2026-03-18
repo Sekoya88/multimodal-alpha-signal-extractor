@@ -46,8 +46,9 @@ class DPOAlignmentService(DPOAlignmentPort):
             for line in f:
                 if line.strip():
                     samples.append(json.loads(line))
-                    if max_samples and len(samples) >= max_samples:
-                        break
+
+        if max_samples:
+            samples = samples[:max_samples]
 
         pairs: list[dict[str, Any]] = []
         model.eval()
@@ -91,9 +92,9 @@ class DPOAlignmentService(DPOAlignmentPort):
                 oracle_action = "HOLD"
 
             # Model prediction (rejected when wrong)
-            # Format messages with image for processor - Qwen2-VL requires text content to be explicit dict
+            # Format messages with image for processor
             infer_messages = [
-                {"role": "system", "content": [{"type": "text", "text": system_text}]},
+                {"role": "system", "content": system_text},
                 {"role": "user", "content": [{"type": "image", "image": image}, {"type": "text", "text": user_text}]},
             ]
             with torch.no_grad():
@@ -109,7 +110,6 @@ class DPOAlignmentService(DPOAlignmentPort):
                     **full_input,
                     max_new_tokens=256,
                     do_sample=False,
-                    use_cache=False,  # Important for bitsandbytes recursion bug
                     pad_token_id=processor.tokenizer.pad_token_id
                     or processor.tokenizer.eos_token_id,
                 )

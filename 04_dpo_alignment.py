@@ -28,9 +28,6 @@ import logging
 import sys
 from pathlib import Path
 
-# Increase recursion limit to prevent PyTorch/bitsandbytes conflicts on Colab
-sys.setrecursionlimit(5000)
-
 import torch
 
 from config import DATASET_DIR, MODELS_DIR, dpo_cfg
@@ -67,14 +64,10 @@ def _load_or_build_pairs(service: DPOAlignmentService, max_samples: int | None) 
         load_in_4bit=dpo_cfg.load_in_4bit,
         dtype=None,
     )
-    processor = AutoProcessor.from_pretrained(
-        "Qwen/Qwen2.5-VL-3B-Instruct",
-        min_pixels=256*28*28,
-        max_pixels=512*28*28,
-    )
-
+    processor = AutoProcessor.from_pretrained("Qwen/Qwen2.5-VL-3B-Instruct")
+    FastVisionModel.for_inference(model)
     device = "cuda" if torch.cuda.is_available() else "cpu"
-    # Do NOT call model.to(device) on a 4-bit Unsloth model, it causes OOM!
+    model = model.to(device)
 
     pairs = service.build_preference_pairs(
         jsonl_path=dpo_cfg.dataset_path,

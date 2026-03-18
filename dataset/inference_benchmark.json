@@ -1,0 +1,90 @@
+{
+  "no_cache": [
+    {
+      "users": 1,
+      "total_requests": 5,
+      "total_time_s": 1.25,
+      "throughput_req_s": 3.98,
+      "p50_ms": 274.21,
+      "p95_ms": 342.46,
+      "p99_ms": 351.95,
+      "cache_enabled": false
+    },
+    {
+      "users": 4,
+      "total_requests": 20,
+      "total_time_s": 1.27,
+      "throughput_req_s": 15.75,
+      "p50_ms": 224.68,
+      "p95_ms": 318.43,
+      "p99_ms": 322.46,
+      "cache_enabled": false
+    },
+    {
+      "users": 16,
+      "total_requests": 80,
+      "total_time_s": 1.55,
+      "throughput_req_s": 51.76,
+      "p50_ms": 285.7,
+      "p95_ms": 385.83,
+      "p99_ms": 398.57,
+      "cache_enabled": false
+    },
+    {
+      "users": 32,
+      "total_requests": 160,
+      "total_time_s": 1.61,
+      "throughput_req_s": 99.3,
+      "p50_ms": 251.75,
+      "p95_ms": 371.25,
+      "p99_ms": 394.23,
+      "cache_enabled": false
+    }
+  ],
+  "cache": [
+    {
+      "users": 1,
+      "total_requests": 5,
+      "total_time_s": 1.02,
+      "throughput_req_s": 4.9,
+      "p50_ms": 167.36,
+      "p95_ms": 356.48,
+      "p99_ms": 391.87,
+      "cache_enabled": true
+    },
+    {
+      "users": 4,
+      "total_requests": 20,
+      "total_time_s": 1.58,
+      "throughput_req_s": 12.7,
+      "p50_ms": 247.32,
+      "p95_ms": 390.59,
+      "p99_ms": 403.1,
+      "cache_enabled": true
+    },
+    {
+      "users": 16,
+      "total_requests": 80,
+      "total_time_s": 1.68,
+      "throughput_req_s": 47.48,
+      "p50_ms": 289.09,
+      "p95_ms": 386.98,
+      "p99_ms": 395.64,
+      "cache_enabled": true
+    },
+    {
+      "users": 32,
+      "total_requests": 160,
+      "total_time_s": 1.73,
+      "throughput_req_s": 92.28,
+      "p50_ms": 274.65,
+      "p95_ms": 389.47,
+      "p99_ms": 397.92,
+      "cache_enabled": true
+    }
+  ],
+  "config": {
+    "requests_per_user": 5,
+    "simulate": true
+  }
+}
