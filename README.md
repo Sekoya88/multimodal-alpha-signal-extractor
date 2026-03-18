@@ -1,3 +1,13 @@
+---
+title: Alpha Signal Extractor
+emoji: ⚡
+colorFrom: blue
+colorTo: purple
+sdk: docker
+app_file: app/streamlit_app.py
+pinned: false
+---
+
 # Multimodal Alpha-Signal Extractor
 
 > End-to-end system that fine-tunes a Vision-Language Model on candlestick charts,
