@@ -533,11 +533,15 @@ def _run_dpo_trainer_standard(dataset: Any, output_dir: Path) -> dict[str, float
         _dpo_kwargs["max_prompt_length"] = dpo_cfg.max_prompt_length
     args = DPOConfig(**_dpo_kwargs)
 
+    # Always try processing_class= first (TRL >= 0.8).
+    # Passing tokenizer= to modern TRL causes it to be forwarded to Trainer.__init__()
+    # which doesn't accept it → TypeError. Fall back to tokenizer= only if
+    # processing_class is absent AND tokenizer is explicitly listed (truly old TRL).
     import inspect as _insp
-    _pc_key = "processing_class" if "processing_class" in _insp.signature(TRL_DPOTrainer.__init__).parameters else "tokenizer"
-    # Old TRL uses `tokenizer=` and calls self.tokenizer.pad_token_id directly on the object.
-    # Passing a Processor (which has no pad_token_id) causes AttributeError.
-    # When on the legacy path, pass processor.tokenizer so pad_token_id is accessible.
+    _sig_params = set(_insp.signature(TRL_DPOTrainer.__init__).parameters)
+    _has_pc = "processing_class" in _sig_params
+    _has_tok = "tokenizer" in _sig_params and not _has_pc
+    _pc_key = "processing_class" if (_has_pc or not _has_tok) else "tokenizer"
     _proc_or_tok = processor if _pc_key == "processing_class" else processor.tokenizer
     trainer = TRL_DPOTrainer(
         model=model,
