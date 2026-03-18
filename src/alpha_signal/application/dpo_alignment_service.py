@@ -500,6 +500,10 @@ def _run_dpo_trainer_standard(dataset: Any, output_dir: Path) -> dict[str, float
 
     def _no_mp_map(self, *a, **kw):
         kw.pop("num_proc", None)
+        # Force single-row processing so _our_tokenize / _patched_process_row
+        # receive individual rows (not batches). TRL often sets batched=True
+        # which breaks our VLM tokenizer that expects one row at a time.
+        kw["batched"] = False
         return _orig_map(self, *a, **kw)
 
     Dataset.map = _no_mp_map
