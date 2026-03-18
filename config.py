@@ -127,6 +127,42 @@ class RewardModelConfig:
 
 
 @dataclass(frozen=True)
+class GRPOConfig:
+    """Configuration for GRPO (Group Relative Policy Optimization) training (Sprint 3)."""
+
+    base_model: str = "unsloth/Qwen2.5-VL-3B-Instruct"
+    max_seq_length: int = 2048
+    load_in_4bit: bool = True
+    # LoRA
+    lora_r: int = 16
+    lora_alpha: int = 16
+    lora_dropout: float = 0.0
+    target_modules: tuple[str, ...] = (
+        "q_proj", "k_proj", "v_proj", "o_proj",
+        "gate_proj", "up_proj", "down_proj",
+    )
+    # GRPO specifics
+    group_size: int = 8                  # N predictions per chart
+    temperature: float = 0.7            # Temperature for diverse sampling
+    epsilon: float = 0.2                # PPO clipping epsilon
+    reward_weight_direction: float = 0.6
+    reward_weight_calibration: float = 0.4
+    # Training
+    num_train_epochs: int = 2
+    per_device_train_batch_size: int = 1
+    gradient_accumulation_steps: int = 4
+    learning_rate: float = 1e-5
+    max_grad_norm: float = 1.0
+    seed: int = 42
+    # Logging
+    log_to_wandb: bool = False
+    log_csv_path: Path = DATASET_DIR / "grpo_reward_curves.csv"
+    # Paths
+    output_dir: Path = MODELS_DIR / "grpo-adapter"
+    dataset_path: Path = DATASET_DIR / "training_data.jsonl"
+
+
+@dataclass(frozen=True)
 class VLLMConfig:
     """Configuration for the vLLM inference server (Step 3)."""
 
@@ -202,5 +238,6 @@ dataset_cfg = DatasetConfig()
 training_cfg = TrainingConfig()
 dpo_cfg = DPOConfig()
 reward_model_cfg = RewardModelConfig()
+grpo_cfg = GRPOConfig()
 vllm_cfg = VLLMConfig()
 pipeline_cfg = PipelineConfig()

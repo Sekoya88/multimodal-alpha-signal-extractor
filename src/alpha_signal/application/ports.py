@@ -198,3 +198,68 @@ class SentimentPort(ABC):
     def provider_info(self) -> str:
         """Returns the identifier of the underlying text LLM provider."""
         pass
+
+
+class GRPOTrainingPort(ABC):
+    """Port for GRPO (Group Relative Policy Optimization) training."""
+
+    @abstractmethod
+    def generate_group(
+        self,
+        image_path: Path,
+        prompt: str,
+        n: int = 8,
+        temperature: float = 0.7,
+    ) -> list[dict[str, Any]]:
+        """Generate N diverse predictions for a single chart via temperature sampling.
+
+        Args:
+            image_path: Path to chart image.
+            prompt: User prompt for the VLM.
+            n: Number of predictions to generate.
+            temperature: Sampling temperature for diversity.
+
+        Returns:
+            List of N prediction dicts with keys: action, confidence, full_text.
+        """
+        pass
+
+    @abstractmethod
+    def compute_rewards(
+        self,
+        predictions: list[dict[str, Any]],
+        oracle_action: str,
+        oracle_return: float,
+    ) -> list[float]:
+        """Compute composite rewards for a group of predictions.
+
+        Reward = 0.6 * directional_accuracy + 0.4 * (1 - |conf_error|).
+        Then normalize within group (subtract mean, divide by std).
+
+        Args:
+            predictions: Group of N predictions.
+            oracle_action: Ground truth action from forward return.
+            oracle_return: Actual forward return value.
+
+        Returns:
+            List of N normalized reward values.
+        """
+        pass
+
+    @abstractmethod
+    def train(
+        self,
+        dataset_path: Path,
+        output_dir: Path,
+    ) -> dict[str, float]:
+        """Run the full GRPO training loop.
+
+        Args:
+            dataset_path: Path to training_data.jsonl.
+            output_dir: Where to save the GRPO adapter.
+
+        Returns:
+            Dict with training metrics (avg_reward, loss, etc.).
+        """
+        pass
+
