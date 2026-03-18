@@ -185,41 +185,73 @@ def _synthetic_rejected(oracle_obj: dict[str, Any], oracle_action: str) -> str:
     return json.dumps(rejected_obj, ensure_ascii=False)
 
 
-from dataclasses import dataclass
-
-# Shim for transformers 5: TRL 0.24 expects MODEL_FOR_VISION_2_SEQ_MAPPING_NAMES
 def _ensure_trl_vision_shim() -> None:
     import transformers.models.auto.modeling_auto as auto
     if not hasattr(auto, "MODEL_FOR_VISION_2_SEQ_MAPPING_NAMES"):
         from collections import OrderedDict
-        # Empty mapping so TRL import succeeds; DPO uses explicit Qwen2_5_VLForConditionalGeneration
         auto.MODEL_FOR_VISION_2_SEQ_MAPPING_NAMES = OrderedDict()
 
 
 def _make_vision_dpo_collator(pad_token_id: int):
-    """Build VisionDPODataCollator lazily so TRL import errors don't crash at module load."""
-    _ensure_trl_vision_shim()
-    from trl.trainer.dpo_trainer import DataCollatorForPreference
+    """Standalone DPO collator — no TRL inheritance, works with any TRL version."""
     import torch as _torch
 
-    @dataclass
-    class VisionDPODataCollator(DataCollatorForPreference):
-        """Custom collator: keeps Qwen2.5-VL pixel_values as 2D [patches, channels]."""
-        def torch_call(self, examples: list[dict[str, Any]]) -> dict[str, Any]:
+    class _VisionDPOCollator:
+        def __init__(self, pad_token_id):
+            self.pad_token_id = pad_token_id
+
+        def __call__(self, examples):
+            return self.torch_call(examples)
+
+        def torch_call(self, examples):
+            # Support both TRL < 0.13 (prompt_input_ids) and >= 0.13 (prompt_ids)
+            pk = "prompt_ids" if "prompt_ids" in examples[0] else "prompt_input_ids"
+            ck = "chosen_ids" if "chosen_ids" in examples[0] else "chosen_input_ids"
+            rk = "rejected_ids" if "rejected_ids" in examples[0] else "rejected_input_ids"
+
             pixel_values, image_grid_thw = [], []
-            for example in examples:
-                if "pixel_values" in example:
-                    pixel_values.append(_torch.tensor(example.pop("pixel_values")))
-                if "image_grid_thw" in example:
-                    image_grid_thw.append(_torch.tensor(example.pop("image_grid_thw")))
-            batch = super().torch_call(examples)
+            for ex in examples:
+                if "pixel_values" in ex:
+                    pixel_values.append(_torch.tensor(ex.pop("pixel_values")))
+                if "image_grid_thw" in ex:
+                    image_grid_thw.append(_torch.tensor(ex.pop("image_grid_thw")))
+
+            def _pad(seqs):
+                max_len = max(len(s) for s in seqs)
+                ids = _torch.full((len(seqs), max_len), self.pad_token_id, dtype=_torch.long)
+                mask = _torch.zeros(len(seqs), max_len, dtype=_torch.long)
+                for i, s in enumerate(seqs):
+                    ids[i, :len(s)] = _torch.tensor(s, dtype=_torch.long)
+                    mask[i, :len(s)] = 1
+                return ids, mask
+
+            chosen_seqs   = [ex[pk] + ex[ck] for ex in examples]
+            rejected_seqs = [ex[pk] + ex[rk] for ex in examples]
+            chosen_ids,   chosen_mask   = _pad(chosen_seqs)
+            rejected_ids, rejected_mask = _pad(rejected_seqs)
+
+            def _labels(ids_tensor, prompt_lens):
+                labels = ids_tensor.clone()
+                for i, pl in enumerate(prompt_lens):
+                    labels[i, :pl] = -100
+                return labels
+
+            prompt_lens = [len(ex[pk]) for ex in examples]
+            batch = {
+                "chosen_input_ids":        chosen_ids,
+                "chosen_attention_mask":   chosen_mask,
+                "chosen_labels":           _labels(chosen_ids, prompt_lens),
+                "rejected_input_ids":      rejected_ids,
+                "rejected_attention_mask": rejected_mask,
+                "rejected_labels":         _labels(rejected_ids, prompt_lens),
+            }
             if pixel_values:
                 batch["pixel_values"] = _torch.cat(pixel_values, dim=0)
             if image_grid_thw:
                 batch["image_sizes"] = _torch.cat(image_grid_thw, dim=0)
             return batch
 
-    return VisionDPODataCollator(pad_token_id=pad_token_id)
+    return _VisionDPOCollator(pad_token_id=pad_token_id)
 
 
 def _patched_process_row(
