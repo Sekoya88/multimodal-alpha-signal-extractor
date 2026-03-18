@@ -19,24 +19,33 @@ pinned: false
 │                      PIPELINE ARCHITECTURE                         │
 │                                                                    │
 │  ┌──────────────┐       ┌─────────────────────────────────────┐   │
-│  │ Candlestick  │──────▶│ Fine-tuned VLM (Qwen2.5-VL-3B)     │   │
-│  │ Chart (PNG)  │       │  ├── llama.cpp  (Apple Silicon)     │   │
-│  └──────────────┘       │  ├── Ollama     (llama3.2-vision)   │   │
-│                         │  └── vLLM       (CUDA)              │   │
-│                         └───────────────┬─────────────────────┘   │
-│                                         │  TradingSignal JSON     │
-│                                         ▼                         │
+│  │ Candlestick  │       │  Temporal Multi-Frame Sequences     │   │
+│  │ Chart (PNG)  │──────▶│  (N=8 consecutive 60d windows)      │   │
+│  └──────────────┘       └─────────────────┬───────────────────┘   │
+│                                           │                       │
+│  ┌──────────────┐       ┌─────────────────▼───────────────────┐   │
+│  │ Redis Image  │◀─────▶│ Fine-tuned VLM (Qwen2.5-VL-3B)      │   │
+│  │ Cache (SHA)  │       │  ├── llama.cpp (Apple Silicon)      │   │
+│  └──────────────┘       │  └── vLLM (Speculative Decoding)    │   │
+│                         └─────────────────┬───────────────────┘   │
+│                                           │  TradingSignal JSON   │
+│                                           ▼                       │
 │  ┌──────────────┐       ┌─────────────────────────────────────┐   │
 │  │ Financial    │──────▶│ Sentiment LLM (llama3:8b)           │   │
 │  │ News (Text)  │       │  └── Ollama (text-only)             │──┐│
 │  └──────────────┘       └─────────────────────────────────────┘  ││
-│                                                                   ││
-│                              merge_signals()  ◀──────────────────┘│
-│                                    │                               │
-│                            ┌───────▼────────┐                     │
-│                            │ TradingDecision │                     │
-│                            │  (Pydantic)     │                     │
-│                            └────────────────┘                     │
+│                                                                  ││
+│                           merge_signals()  ◀─────────────────────┘│
+│                                 │                                 │
+│                         ┌───────▼────────────────┐                │
+│                         │ Visual Reward Scorer   │                │
+│                         │ (Frozen Qwen + MLP)    │                │
+│                         └───────┬────────────────┘                │
+│                                 │                                 │
+│                         ┌───────▼────────┐                        │
+│                         │ TradingDecision │                        │
+│                         │  (Pydantic)     │                        │
+│                         └────────────────┘                        │
 └─────────────────────────────────────────────────────────────────────┘
 ```
 
@@ -67,8 +76,11 @@ news sentiment. The pipeline is fully local (no cloud API calls), running on App
 **Key capabilities:**
 
 - **Visual technical analysis** — A fine-tuned Qwen2.5-VL-3B reads raw candlestick + Bollinger Bands + RSI charts
+- **Advanced RLHF Alignment** — Aligned via DPO (Direct Preference Optimization) and GRPO (Group Relative Policy Optimization) with a custom visual reward multiplier mechanism.
+- **Temporal Multi-Frame Analysis** — Analyzes sequences of multiple consecutive charts (sliding windows) natively using Qwen's multi-image capability.
 - **NLP sentiment scoring** — LLaMA 3 8B extracts bullish/bearish catalysts from Yahoo Finance news
 - **Signal merging** — LangChain orchestrates both signals into a structured `TradingDecision` (action, confidence, entry/SL/TP)
+- **Production Inference** — Scalable vLLM inference setup with Speculative Decoding and Redis image embedding caching.
 - **Streamlit dashboard** — Premium Cyber-Fintech interface with glassmorphism, live charts, and real-time pipeline execution
 
 ---
@@ -117,10 +129,27 @@ multimodal-alpha-signal-extractor/
 ├── 02_finetune_colab.py          # Step 2b: QLoRA fine-tuning (Google Colab T4)
 ├── 03_serve_ollama.py            # Step 3a: Ollama model management (Apple Silicon)
 ├── 03_serve_vllm.py              # Step 3b: vLLM serving (CUDA)
+├── 04_dpo_alignment.py           # Sprint 1: DPO Alignment Pipeline
+├── 05_reward_model.py            # Sprint 2: 2-Layer Visual Reward Model 
+├── 06_grpo_training.py           # Sprint 3: GRPO Training Loop (PPO clipping)
+├── 07_temporal_extension.py      # Sprint 4: Temporal Multi-Frame Sequences
+├── 08_inference_benchmark.py     # Sprint 5: Production vLLM Benchmarks + Redis Cache
 │
 ├── dataset/                      # Generated charts + JSONL (git-ignored)
 └── models/                       # Checkpoints + GGUF files (git-ignored)
 ```
+
+---
+
+## The 5 Advanced Extensions
+
+The multimodal VLM reasoning capabilities are extended across 5 robust implementation sprints built with Clean Architecture:
+
+1. **Sprint 1 (DPO Alignment):** Implements a `DPOTrainer` pipeline with `trl` applying Direct Preference Optimization. It uses generated chart datasets holding the actual forward-returns (realized profit) as a reward oracle, labeling correct action predictions as the chosen sequence, and incorrect ones as the rejected sequence.
+2. **Sprint 2 (Visual Reward Model):** Uses a frozen Qwen2.5-VL backbone to extract features directly into a trainable 2-layer MLP head. The scalar score [0,1] multiplies output confidences downstream in the pipeline as a 6th `RewardScorer` node.
+3. **Sprint 3 (GRPO Training Loop):** Group Relative Policy Optimization using temperature sampling across N=8 predictions per chart. It applies a composite reward function (0.6 directional accuracy + 0.4 calibration) and PPO-style policy clipping.
+4. **Sprint 4 (Temporal Multi-Frame Analysis):** Sliding window feature sequences. It generates N consecutive overlapping frames (stride=5) from OHLCV market data. The VLM accepts these sequences directly using multi-image prompts, supported by learned temporal position embeddings.
+5. **Sprint 5 (Production Inference Optimization):** Leverages `vLLM` speculative decoding (draft model: Qwen2.5-0.5B-Instruct, verifier: 3B) and asynchronous multi-user load testing (generating 1 to 32 concurrent clients). Integrates a `Redis` cache mapping SHA-256 hashes of base64 images to bypass the vision encoder locally.
 
 ---
 
@@ -328,11 +357,16 @@ alpha-signal --ticker AAPL --json-logs
 python -m pytest tests/ -v
 ```
 
-31 tests covering:
+104 tests currently covering the entire domain and extensions:
 
 - `test_indicators.py` — RSI computation, Bollinger Bands, edge cases, `add_indicators` integration
 - `test_schemas.py` — Pydantic model validation, serialization roundtrip, boundary values
 - `test_merger.py` — Signal alignment logic, confidence weighting, conflict resolution
+- `test_dpo.py` — DPO service logic and ports
+- `test_reward_model.py` — MLP head forward passes, action mappings, integration overrides
+- `test_grpo.py` — Normalized clipping functions, composite rewards metric logic
+- `test_temporal.py` — Multi-frame boundary verification, learned embeddings shapes
+- `test_benchmark.py` — Mock configurations and Redis `aiohttp` cache connection mapping
 
 ---
 
