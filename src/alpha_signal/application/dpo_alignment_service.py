@@ -272,13 +272,36 @@ def _patched_process_row(
     Extracts chosen/rejected text from list format for tokenizer.
     """
     import re
-    import re
-
     import torch
+
     processor, tokenizer = processing_class, processing_class.tokenizer
 
+    def _to_py(obj):
+        """Recursively convert Arrow StructScalar / PyArrow types to native Python."""
+        if hasattr(obj, "as_py"):
+            return obj.as_py()
+        if isinstance(obj, dict):
+            return {k: _to_py(v) for k, v in obj.items()}
+        if isinstance(obj, (list, tuple)):
+            return [_to_py(x) for x in obj]
+        return obj
+
+    # Normalise image to PIL (Arrow may return bytes / numpy / dict{"bytes":...})
+    from PIL import Image as _PILImage
+    import numpy as _np
+    import io as _io
+    raw_img = features["images"][0]
+    if isinstance(raw_img, _PILImage.Image):
+        pil_img = raw_img
+    elif isinstance(raw_img, bytes):
+        pil_img = _PILImage.open(_io.BytesIO(raw_img)).convert("RGB")
+    elif isinstance(raw_img, dict) and "bytes" in raw_img:
+        pil_img = _PILImage.open(_io.BytesIO(raw_img["bytes"])).convert("RGB")
+    else:
+        pil_img = _PILImage.fromarray(_np.array(raw_img).astype(_np.uint8))
+
     # Build prompt: prefer prompt_raw (list) so processor expands from actual image — fixes 1786 vs 1820 mismatch
-    raw_prompt = features.get("prompt_raw") or features["prompt"]
+    raw_prompt = _to_py(features.get("prompt_raw") or features["prompt"])
     if isinstance(raw_prompt, str):
         prompt_str = re.sub(
             r"<\|vision_start\|>.*?<\|vision_end\|>",
@@ -300,7 +323,7 @@ def _patched_process_row(
                 content = []
                 for c in msg.get("content", []):
                     if isinstance(c, dict) and c.get("type") == "image":
-                        content.append({"type": "image", "image": features["images"][0]})
+                        content.append({"type": "image", "image": pil_img})
                     else:
                         content.append(c)
                 prompt_msgs.append({"role": "user", "content": content})
@@ -315,8 +338,8 @@ def _patched_process_row(
         elif raw_prompt and isinstance(raw_prompt, list) and isinstance(raw_prompt[0], str):
             prompt_str = raw_prompt[0] if len(raw_prompt) == 1 else "".join(str(x) for x in raw_prompt)
         else:
-            raise ValueError(f"Cannot derive prompt_str from features['prompt']: {type(raw_prompt)}")
-    processed_features = processor(images=features["images"], text=prompt_str, add_special_tokens=False)
+            raise ValueError(f"Cannot derive prompt_str from features['prompt']: {type(raw_prompt)}, msgs={[type(m) for m in raw_prompt[:2]]}")
+    processed_features = processor(images=[pil_img], text=prompt_str, add_special_tokens=False)
 
     prompt_input_ids = processed_features["input_ids"][0]
     if isinstance(prompt_input_ids, torch.Tensor):
