@@ -55,19 +55,21 @@ def _load_or_build_pairs(service: DPOAlignmentService, max_samples: int | None) 
         return pairs
 
     logger.info("Building preference pairs (model inference vs oracle)...")
-    from transformers import AutoProcessor
-    from unsloth import FastVisionModel
+    from transformers import AutoProcessor, Qwen2_5_VLForConditionalGeneration, BitsAndBytesConfig
 
-    model, tokenizer = FastVisionModel.from_pretrained(
-        model_name=dpo_cfg.base_model,
-        max_seq_length=dpo_cfg.max_seq_length,
+    # Use standard Transformers for generation to avoid Unsloth/bitsandbytes RecursionError
+    bnb_config = BitsAndBytesConfig(
         load_in_4bit=dpo_cfg.load_in_4bit,
-        dtype=None,
+        bnb_4bit_compute_dtype=torch.bfloat16 if torch.cuda.is_bf16_supported() else torch.float16,
+    )
+    
+    model = Qwen2_5_VLForConditionalGeneration.from_pretrained(
+        dpo_cfg.base_model,
+        quantization_config=bnb_config,
+        device_map="auto",
     )
     processor = AutoProcessor.from_pretrained("Qwen/Qwen2.5-VL-3B-Instruct")
-    FastVisionModel.for_inference(model)
     device = "cuda" if torch.cuda.is_available() else "cpu"
-    model = model.to(device)
 
     pairs = service.build_preference_pairs(
         jsonl_path=dpo_cfg.dataset_path,
