@@ -196,40 +196,30 @@ def _ensure_trl_vision_shim() -> None:
         auto.MODEL_FOR_VISION_2_SEQ_MAPPING_NAMES = OrderedDict()
 
 
-def _import_trl_collator():
+def _make_vision_dpo_collator(pad_token_id: int):
+    """Build VisionDPODataCollator lazily so TRL import errors don't crash at module load."""
     _ensure_trl_vision_shim()
     from trl.trainer.dpo_trainer import DataCollatorForPreference
-    return DataCollatorForPreference
+    import torch as _torch
 
+    @dataclass
+    class VisionDPODataCollator(DataCollatorForPreference):
+        """Custom collator: keeps Qwen2.5-VL pixel_values as 2D [patches, channels]."""
+        def torch_call(self, examples: list[dict[str, Any]]) -> dict[str, Any]:
+            pixel_values, image_grid_thw = [], []
+            for example in examples:
+                if "pixel_values" in example:
+                    pixel_values.append(_torch.tensor(example.pop("pixel_values")))
+                if "image_grid_thw" in example:
+                    image_grid_thw.append(_torch.tensor(example.pop("image_grid_thw")))
+            batch = super().torch_call(examples)
+            if pixel_values:
+                batch["pixel_values"] = _torch.cat(pixel_values, dim=0)
+            if image_grid_thw:
+                batch["image_sizes"] = _torch.cat(image_grid_thw, dim=0)
+            return batch
 
-DataCollatorForPreference = _import_trl_collator()
-
-@dataclass
-class VisionDPODataCollator(DataCollatorForPreference):
-    """Custom collator to handle Qwen2.5-VL vision tensors correctly for DPO.
-    TRL's default pads pixel_values (making them 3D), but Qwen expects 2D concats.
-    """
-    def torch_call(self, examples: list[dict[str, Any]]) -> dict[str, Any]:
-        import torch
-        pixel_values = []
-        image_grid_thw = []
-        for example in examples:
-            if "pixel_values" in example:
-                pixel_values.append(torch.tensor(example.pop("pixel_values")))
-            if "image_grid_thw" in example:
-                image_grid_thw.append(torch.tensor(example.pop("image_grid_thw")))
-                
-        # Let TRL pad the text inputs
-        batch = super().torch_call(examples)
-        
-        if pixel_values:
-            batch["pixel_values"] = torch.cat(pixel_values, dim=0)
-        if image_grid_thw:
-            # We rename to image_sizes so TRL's DPOTrainer automatically duplicates 
-            # it for chosen/rejected along with pixel_values.
-            batch["image_sizes"] = torch.cat(image_grid_thw, dim=0)
-            
-        return batch
+    return VisionDPODataCollator(pad_token_id=pad_token_id)
 
 
 def _patched_process_row(
@@ -445,7 +435,7 @@ def _run_dpo_trainer_standard(dataset: Any, output_dir: Path) -> dict[str, float
         args=args,
         train_dataset=dataset,
         processing_class=processor,
-        data_collator=VisionDPODataCollator(
+        data_collator=_make_vision_dpo_collator(
             pad_token_id=processor.tokenizer.pad_token_id or processor.tokenizer.eos_token_id
         ),
     )
@@ -562,7 +552,7 @@ def _run_dpo_trainer(dataset: Any, output_dir: Path) -> dict[str, float]:
         args=args,
         train_dataset=dataset,
         processing_class=processor,
-        data_collator=VisionDPODataCollator(pad_token_id=processor.tokenizer.pad_token_id or processor.tokenizer.eos_token_id),
+        data_collator=_make_vision_dpo_collator(pad_token_id=processor.tokenizer.pad_token_id or processor.tokenizer.eos_token_id),
     )
 
     resume = os.path.isdir(str(output_dir)) and any(
