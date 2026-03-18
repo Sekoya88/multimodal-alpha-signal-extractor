@@ -172,18 +172,7 @@ class PipelineConfig:
     log_level: str = "INFO"
 
 
-# ============================================================================
-# Singleton instances (import directly)
-# ============================================================================
-dataset_cfg = DatasetConfig()
-training_cfg = TrainingConfig()
-dpo_cfg = DPOConfig()
-reward_model_cfg = RewardModelConfig()
-grpo_cfg = GRPOConfig()
-temporal_cfg = TemporalConfig()
-benchmark_cfg = BenchmarkConfig()
-vllm_cfg = VLLMConfig()
-pipeline_cfg = PipelineConfig()
+
 @dataclass(frozen=True)
 class RewardModelConfig:
     """Configuration for the Visual Reward Model (Sprint 2)."""
@@ -287,3 +276,16 @@ class BenchmarkConfig:
     # Paths
     benchmark_results_path: Path = DATASET_DIR / "inference_benchmark.json"
     benchmark_plot_path: Path = DATASET_DIR / "inference_benchmark_plot.png"
+
+# ============================================================================
+# Singleton instances (import directly)
+# ============================================================================
+dataset_cfg = DatasetConfig()
+training_cfg = TrainingConfig()
+dpo_cfg = DPOConfig()
+reward_model_cfg = RewardModelConfig()
+grpo_cfg = GRPOConfig()
+temporal_cfg = TemporalConfig()
+benchmark_cfg = BenchmarkConfig()
+vllm_cfg = VLLMConfig()
+pipeline_cfg = PipelineConfig()
