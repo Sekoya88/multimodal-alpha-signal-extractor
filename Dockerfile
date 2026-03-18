@@ -29,10 +29,10 @@ RUN mkdir -p $OLLAMA_MODELS
 COPY --chown=user:user . .
 
 # 5. Install the project and dependencies
-# Install llama-cpp-python >=0.3.10 from CPU wheel index (Qwen25VLChatHandler)
-# Old 0.2.62 lacked VLM chat handlers — required for alpha-signal-q4km.gguf
-RUN pip install --no-cache-dir "llama-cpp-python>=0.3.10" \
-    --extra-index-url https://abetlen.github.io/llama-cpp-python/whl/cpu
+# Pre-built CPU wheel from llama-cpp-wheels (avoids 3h source build on HF)
+# Required for Qwen25VLChatHandler (alpha-signal-q4km.gguf)
+RUN pip install --no-cache-dir \
+    https://github.com/eswarthammana/llama-cpp-wheels/releases/download/v0.3.16/llama_cpp_python-0.3.16-cp311-cp311-linux_x86_64.whl
 
 RUN pip install --no-cache-dir build && \
     pip install --no-cache-dir -e .
