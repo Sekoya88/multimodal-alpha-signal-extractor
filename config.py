@@ -184,6 +184,31 @@ class TemporalConfig:
 
 
 @dataclass(frozen=True)
+class BenchmarkConfig:
+    """Configuration for Production Inference Benchmark (Sprint 5)."""
+
+    # Redis Cache
+    redis_url: str = "redis://localhost:6379/1"
+    cache_ttl_seconds: int = 3600  # 1 hour
+    # vLLM Optimization Defaults
+    tensor_parallel_size: int = 1
+    max_num_seqs: int = 32
+    gpu_memory_utilization: float = 0.90
+    enable_prefix_caching: bool = True
+    # Speculative Decoding
+    speculative_draft_model: str = "Qwen/Qwen2.5-0.5B-Instruct"
+    speculative_draft_tensor_parallel_size: int = 1
+    num_speculative_tokens: int = 4  # gamma
+    # Benchmark execution
+    concurrent_users: list[int] = field(default_factory=lambda: [1, 4, 16, 32])
+    requests_per_user: int = 5
+    seed: int = 42
+    # Paths
+    benchmark_results_path: Path = DATASET_DIR / "inference_benchmark.json"
+    benchmark_plot_path: Path = DATASET_DIR / "inference_benchmark_plot.png"
+
+
+@dataclass(frozen=True)
 class VLLMConfig:
     """Configuration for the vLLM inference server (Step 3)."""
 
@@ -261,5 +286,6 @@ dpo_cfg = DPOConfig()
 reward_model_cfg = RewardModelConfig()
 grpo_cfg = GRPOConfig()
 temporal_cfg = TemporalConfig()
+benchmark_cfg = BenchmarkConfig()
 vllm_cfg = VLLMConfig()
 pipeline_cfg = PipelineConfig()
