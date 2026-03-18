@@ -28,11 +28,12 @@ RUN mkdir -p $OLLAMA_MODELS
 COPY --chown=user:user . .
 
 # 5. Install the project and dependencies
+# We use the pre-built wheels for llama-cpp-python to avoid compiling C++ for 15 minutes and timing out.
+RUN pip install --no-cache-dir llama-cpp-python \
+    --extra-index-url https://abetlen.github.io/llama-cpp-python/whl/cpu
+
 RUN pip install --no-cache-dir build && \
     pip install --no-cache-dir -e .
-
-# 6. Force specific install for llama-cpp-python (CPU mode for free tier)
-RUN CMAKE_ARGS="-DGGML_CPU=ON" pip install --no-cache-dir llama-cpp-python
 
 # 7. Make the entrypoint executable
 RUN chmod +x scripts/entrypoint.sh
