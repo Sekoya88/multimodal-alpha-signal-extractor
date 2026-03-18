@@ -245,26 +245,35 @@ def _patched_process_row(
     import torch
     processor, tokenizer = processing_class, processing_class.tokenizer
 
-    # Build prompt messages with actual images so processor produces correct <|image_pad|>
-    prompt_msgs = []
-    for msg in features["prompt"]:
-        if msg.get("role") == "user":
-            content = []
-            for c in msg.get("content", []):
-                if isinstance(c, dict) and c.get("type") == "image":
-                    content.append({"type": "image", "image": features["images"][0]})
-                else:
-                    content.append(c)
-            prompt_msgs.append({"role": "user", "content": content})
+    # Build prompt: TRL may pass list[dict] (raw), str (pre-templated), or list with mixed types
+    raw_prompt = features["prompt"]
+    if isinstance(raw_prompt, str):
+        prompt_str = raw_prompt
+    else:
+        prompt_msgs = []
+        for msg in (raw_prompt if isinstance(raw_prompt, list) else []):
+            if not isinstance(msg, dict):
+                continue
+            if msg.get("role") == "user":
+                content = []
+                for c in msg.get("content", []):
+                    if isinstance(c, dict) and c.get("type") == "image":
+                        content.append({"type": "image", "image": features["images"][0]})
+                    else:
+                        content.append(c)
+                prompt_msgs.append({"role": "user", "content": content})
+            else:
+                prompt_msgs.append(msg)
+        if prompt_msgs:
+            prompt_str = processor.apply_chat_template(
+                prompt_msgs,
+                tokenize=False,
+                add_generation_prompt=True,
+            )
+        elif raw_prompt and isinstance(raw_prompt, list) and isinstance(raw_prompt[0], str):
+            prompt_str = raw_prompt[0] if len(raw_prompt) == 1 else "".join(str(x) for x in raw_prompt)
         else:
-            prompt_msgs.append(msg)
-
-    # Apply template to get string with <|image_pad|> (fixes tokens:0 vs features:1820)
-    prompt_str = processor.apply_chat_template(
-        prompt_msgs,
-        tokenize=False,
-        add_generation_prompt=True,
-    )
+            raise ValueError(f"Cannot derive prompt_str from features['prompt']: {type(raw_prompt)}")
     processed_features = processor(images=features["images"], text=prompt_str, add_special_tokens=False)
 
     prompt_input_ids = processed_features["input_ids"][0]
