@@ -6,6 +6,7 @@ RUN apt-get update && apt-get install -y \
     cmake \
     curl \
     git \
+    wget \
     zstd \
     && rm -rf /var/lib/apt/lists/*
 

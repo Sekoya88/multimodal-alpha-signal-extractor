@@ -106,9 +106,16 @@ class PipelineConfig:
     ollama_vlm_model: str = "llama3.2-vision:11b"
 
     # LLAMA.CPP BACKEND (Apple Silicon M4 - Fine-Tuned GGUF)
+    # Override via LLAMA_CPP_MODEL_PATH / LLAMA_CPP_MMPROJ_PATH (used by HF Spaces entrypoint).
     # --------------------------------------------------------------------------
-    llama_cpp_model_path: str = os.path.expanduser("~/Downloads/alpha-signal-q4km.gguf")
-    llama_cpp_mmproj_path: str = str(PROJECT_ROOT / "models" / "mmproj-Qwen2.5-VL-3B-Instruct-f16.gguf")
+    llama_cpp_model_path: str = os.environ.get(
+        "LLAMA_CPP_MODEL_PATH",
+        os.path.expanduser("~/Downloads/alpha-signal-q4km.gguf"),
+    )
+    llama_cpp_mmproj_path: str = os.environ.get(
+        "LLAMA_CPP_MMPROJ_PATH",
+        str(PROJECT_ROOT / "models" / "mmproj-Qwen2.5-VL-3B-Instruct-f16.gguf"),
+    )
     llama_cpp_n_gpu_layers: int = -1  # -1 for all layers on Metal
     llama_cpp_n_ctx: int = 8192       # Vision tokens require a large context window
     # vLLM fallback (for CUDA machines only)
@@ -121,8 +128,9 @@ class PipelineConfig:
     vlm_max_tokens: int = 1024
 
     # Ollama endpoint (text-only sentiment LLM)
+    # Override via OLLAMA_MODEL (e.g. qwen2:0.5b for HF free-tier).
     ollama_base_url: str = "http://localhost:11434"
-    ollama_model: str = "llama3:8b"
+    ollama_model: str = os.environ.get("OLLAMA_MODEL", "llama3:8b")
     ollama_temperature: float = 0.0
 
     # Retry policy

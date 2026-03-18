@@ -1,4 +1,15 @@
 #!/bin/bash
+# Entrypoint for HF Spaces Docker deployment.
+# Local dev: run `streamlit run app/streamlit_app.py` directly (this script is NOT used).
+
+set -e
+
+APP_DIR="${HOME}/app"
+VLM_MODEL="alpha-signal-q4km.gguf"
+VLM_PATH="${APP_DIR}/${VLM_MODEL}"
+MMPROJ_DIR="${APP_DIR}/models"
+MMPROJ_FILE="mmproj-Qwen2.5-VL-3B-Instruct-f16.gguf"
+MMPROJ_PATH="${MMPROJ_DIR}/${MMPROJ_FILE}"
 
 # --- 1. Start Ollama Server in Background ---
 echo "⚙️  Starting Ollama Server..."
@@ -13,31 +24,37 @@ done
 echo "✅ Ollama is up!"
 
 # --- 2. Pull the Text Sentiment Model ---
-# Note: On a free 16GB CPU space, loading an 8B model will take ~4.7GB RAM and take a few minutes.
-# If you want it faster, you might change llama3:8b to qwen:0.5b in your config and here.
-MODEL_NAME="llama3:8b"
+# Override via OLLAMA_MODEL env (e.g. OLLAMA_MODEL=qwen2:0.5b for free-tier speed).
+MODEL_NAME="${OLLAMA_MODEL:-llama3:8b}"
 echo "⬇️  Pulling $MODEL_NAME (this may take a few minutes the first time)..."
 ollama pull $MODEL_NAME
 echo "✅ $MODEL_NAME is ready!"
 
-# --- 3. Ensure VLM Model Exists ---
-# Since you fine-tuned Qwen2.5-VL and exported it to GGUF,
-# HF Spaces has a 1GB limit for free spaces if not using LFS/Models.
-# We will download it directly inside the container from a public URL.
-VLM_MODEL="alpha-signal-q4km.gguf"
-if [ ! -f "$VLM_MODEL" ]; then
+# --- 3. Download VLM (fine-tuned alpha-signal) from HF Hub ---
+if [ ! -f "$VLM_PATH" ]; then
     echo "⚠️  $VLM_MODEL not found locally."
-    echo "⬇️  Downloading the model via wget to bypass the 1GB HF Space Git limit..."
-    
-    # Use Hugging Face Hub CLI to download a tiny, publicly available vision model as a fallback/test
-    # We will use minicpm-v-2.0 which is ~2GB, but we'll get a super small quant to fit in the container
-    echo "Using a public Qwen2-VL GGUF as fallback for testing..."
-    # We download a small Qwen2-VL quant from bartowski to test if the user's specific file isn't available
-    wget -qO $VLM_MODEL "https://huggingface.co/bartowski/Qwen2-VL-2B-Instruct-GGUF/resolve/main/Qwen2-VL-2B-Instruct-Q4_K_M.gguf"
-    
-    echo "✅ Model downloaded!"
+    echo "⬇️  Downloading from Sekoya/mon-qwen-finetune..."
+    wget -qO "$VLM_PATH" "https://huggingface.co/Sekoya/mon-qwen-finetune/resolve/main/alpha-signal-q4km.gguf"
+    echo "✅ VLM model downloaded!"
+else
+    echo "✅ VLM model already present."
 fi
 
-# --- 4. Start Streamlit App ---
+# --- 4. Download mmproj (vision encoder) if missing ---
+if [ ! -f "$MMPROJ_PATH" ]; then
+    echo "⚠️  $MMPROJ_FILE not found."
+    echo "⬇️  Downloading from ggml-org/Qwen2.5-VL-3B-Instruct-GGUF..."
+    mkdir -p "$MMPROJ_DIR"
+    wget -qO "$MMPROJ_PATH" "https://huggingface.co/ggml-org/Qwen2.5-VL-3B-Instruct-GGUF/resolve/main/${MMPROJ_FILE}"
+    echo "✅ mmproj downloaded!"
+else
+    echo "✅ mmproj already present."
+fi
+
+# --- 5. Export paths for config.py (env overrides) ---
+export LLAMA_CPP_MODEL_PATH="$VLM_PATH"
+export LLAMA_CPP_MMPROJ_PATH="$MMPROJ_PATH"
+
+# --- 6. Start Streamlit App ---
 echo "🚀 Starting Alpha-Signal Extractor Dashboard on port 7860..."
 python -m streamlit run app/streamlit_app.py --server.port=7860 --server.address=0.0.0.0
